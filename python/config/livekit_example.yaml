@@ -1,0 +1,30 @@
+# Example LiveKit configuration for GigE camera streaming
+
+livekit:
+  # LiveKit server URL
+  url: ws://localhost:7880
+  
+  # API credentials (for token generation)
+  api_key: your-api-key
+  api_secret: your-api-secret
+  
+  # Room settings
+  room_name: gige-camera-room
+  participant_name: gige-camera
+  
+  # Optional: Pre-generated access token (if not using api_key/secret)
+  # token: your-access-token
+
+camera:
+  # Camera resolution
+  width: 1280
+  height: 720
+  
+  # Frame rate
+  fps: 30
+  
+  # Camera device index (0 for first camera)
+  device_index: 0
+  
+  # Optional: Path to GenTL producer CTI file
+  # gentl_producer: /opt/mvIMPACT_Acquire/lib/x86_64/mvGenTLProducer.cti

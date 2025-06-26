@@ -151,6 +151,12 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         logger.info("Starting stream...")
         isStreaming = true
         
+        // Start camera streaming if connected
+        if cameraManager.isConnected && !cameraManager.isStreaming {
+            logger.info("Starting camera stream...")
+            cameraManager.startStreaming()
+        }
+        
         startStreaming()
     }
     
@@ -159,6 +165,12 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         
         logger.info("Stopping stream...")
         isStreaming = false
+        
+        // Stop camera streaming
+        if cameraManager.isStreaming {
+            logger.info("Stopping camera stream...")
+            cameraManager.stopStreaming()
+        }
         
         stopStreaming()
     }
@@ -376,9 +388,100 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
     }
     
     private func convertPixelBuffer(_ input: CVPixelBuffer, to format: CMIOExtensionStreamFormat) -> CVPixelBuffer {
-        // For now, just return the input
-        // TODO: Implement proper format conversion if needed
+        let inputPixelFormat = CVPixelBufferGetPixelFormatType(input)
+        let formatDesc = format.formatDescription
+        let outputPixelFormat = CMFormatDescriptionGetMediaSubType(formatDesc)
+        
+        // If formats match, return as-is
+        if inputPixelFormat == outputPixelFormat {
+            return input
+        }
+        
+        // Convert BGRA to YUV 422 if needed
+        if inputPixelFormat == kCVPixelFormatType_32BGRA && outputPixelFormat == kCVPixelFormatType_422YpCbCr8 {
+            return convertBGRAToYUV422(input) ?? input
+        }
+        
+        // Return input if no conversion implemented
         return input
+    }
+    
+    private func convertBGRAToYUV422(_ bgraBuffer: CVPixelBuffer) -> CVPixelBuffer? {
+        CVPixelBufferLockBaseAddress(bgraBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(bgraBuffer, .readOnly) }
+        
+        let width = CVPixelBufferGetWidth(bgraBuffer)
+        let height = CVPixelBufferGetHeight(bgraBuffer)
+        
+        // Create YUV buffer
+        var yuvBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_422YpCbCr8,
+            [
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            ] as CFDictionary,
+            &yuvBuffer
+        )
+        
+        guard status == kCVReturnSuccess, let outputBuffer = yuvBuffer else {
+            return nil
+        }
+        
+        CVPixelBufferLockBaseAddress(outputBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(outputBuffer, []) }
+        
+        guard let bgraData = CVPixelBufferGetBaseAddress(bgraBuffer),
+              let yuvData = CVPixelBufferGetBaseAddress(outputBuffer) else {
+            return nil
+        }
+        
+        let bgraBytesPerRow = CVPixelBufferGetBytesPerRow(bgraBuffer)
+        let yuvBytesPerRow = CVPixelBufferGetBytesPerRow(outputBuffer)
+        
+        let bgra = bgraData.bindMemory(to: UInt8.self, capacity: bgraBytesPerRow * height)
+        let yuv = yuvData.bindMemory(to: UInt8.self, capacity: yuvBytesPerRow * height)
+        
+        // Convert BGRA to YUV 422
+        for y in 0..<height {
+            for x in stride(from: 0, to: width, by: 2) {
+                let bgraIndex1 = y * bgraBytesPerRow + x * 4
+                let bgraIndex2 = y * bgraBytesPerRow + (x + 1) * 4
+                let yuvIndex = y * yuvBytesPerRow + x * 2
+                
+                // Get BGRA values for two pixels
+                let b1 = Float(bgra[bgraIndex1])
+                let g1 = Float(bgra[bgraIndex1 + 1])
+                let r1 = Float(bgra[bgraIndex1 + 2])
+                
+                let b2 = Float(bgra[bgraIndex2])
+                let g2 = Float(bgra[bgraIndex2 + 1])
+                let r2 = Float(bgra[bgraIndex2 + 2])
+                
+                // Convert to YUV (ITU-R BT.601)
+                let y1 = 0.299 * r1 + 0.587 * g1 + 0.114 * b1
+                let y2 = 0.299 * r2 + 0.587 * g2 + 0.114 * b2
+                
+                // Average the two pixels for chroma
+                let avgR = (r1 + r2) / 2
+                let avgG = (g1 + g2) / 2
+                let avgB = (b1 + b2) / 2
+                let avgY = (y1 + y2) / 2
+                
+                let u = -0.147 * avgR - 0.289 * avgG + 0.436 * avgB + 128
+                let v = 0.615 * avgR - 0.515 * avgG - 0.100 * avgB + 128
+                
+                // Pack as YUV 422: Cb Y0 Cr Y1
+                yuv[yuvIndex] = UInt8(clamping: Int(u))
+                yuv[yuvIndex + 1] = UInt8(clamping: Int(y1))
+                yuv[yuvIndex + 2] = UInt8(clamping: Int(v))
+                yuv[yuvIndex + 3] = UInt8(clamping: Int(y2))
+            }
+        }
+        
+        return outputBuffer
     }
 }
 

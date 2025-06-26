@@ -50,14 +50,14 @@ class GigECameraManager: NSObject, ObservableObject {
     // MARK: - Connection
     
     func connect(to camera: AravisCamera) {
-        guard aravisBridge.connectToCamera(camera) else {
+        guard aravisBridge.connect(to: camera) else {
             return
         }
         currentCamera = camera
     }
     
     func connectToIP(_ ipAddress: String) {
-        guard aravisBridge.connectToCameraWithIP(ipAddress) else {
+        guard aravisBridge.connectToCamera(atAddress: ipAddress) else {
             return
         }
     }

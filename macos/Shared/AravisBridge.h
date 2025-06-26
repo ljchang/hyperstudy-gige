@@ -49,7 +49,7 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 
 // Connection
 - (BOOL)connectToCamera:(AravisCamera *)camera;
-- (BOOL)connectToCameraWithIP:(NSString *)ipAddress;
+- (BOOL)connectToCameraAtAddress:(NSString *)ipAddress;
 - (void)disconnect;
 
 // Streaming

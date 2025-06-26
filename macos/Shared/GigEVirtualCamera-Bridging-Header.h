@@ -8,7 +8,7 @@
 #ifndef GigEVirtualCamera_Bridging_Header_h
 #define GigEVirtualCamera_Bridging_Header_h
 
-// Uncomment when Aravis is properly integrated
-// #import "AravisBridge.h"
+// Import Aravis bridge
+#import "AravisBridge.h"
 
 #endif /* GigEVirtualCamera_Bridging_Header_h */

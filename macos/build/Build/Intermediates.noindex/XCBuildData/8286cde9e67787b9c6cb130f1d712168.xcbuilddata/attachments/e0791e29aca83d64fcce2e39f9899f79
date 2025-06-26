@@ -1,0 +1,78 @@
+{
+  "" : {
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigEVirtualCamera-master.dia",
+    "emit-module-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigEVirtualCamera-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigEVirtualCamera-master-emit-module.dia",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigEVirtualCamera-master.swiftdeps"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/GigECameraApp/CameraManager.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraManager~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/GigECameraApp/ContentView.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/GigECameraApp/GigECameraApp.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraApp~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/Shared/AravisBridge-Stub.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/AravisBridge-Stub~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/Shared/CameraConstants.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/CameraConstants~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/Shared/DesignSystem.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/DesignSystem~partial.swiftmodule"
+  },
+  "/Users/lukechang/Github/hyperstudy-gige/macos/Shared/GigECameraManager.swift" : {
+    "const-values" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.swiftconstvalues",
+    "dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.d",
+    "diagnostics" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.dia",
+    "index-unit-output-path" : "/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.o",
+    "llvm-bc" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.bc",
+    "object" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.o",
+    "swift-dependencies" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager.swiftdeps",
+    "swiftmodule" : "/Users/lukechang/Github/hyperstudy-gige/macos/build/Build/Intermediates.noindex/GigEVirtualCamera.build/Debug/GigEVirtualCamera.build/Objects-normal/arm64/GigECameraManager~partial.swiftmodule"
+  }
+}

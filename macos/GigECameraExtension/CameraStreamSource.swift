@@ -25,8 +25,13 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
     private var _activeFormatIndex = 0
     private let _formats: [CMIOExtensionStreamFormat]
     
-    // Test pattern generation (will be replaced with Aravis)
+    // Frame generation
     private var frameCounter: UInt64 = 0
+    private var latestCameraFrame: CVPixelBuffer?
+    private let frameBufferLock = NSLock()
+    
+    // Camera manager
+    private let cameraManager = GigECameraManager.shared
     
     // MARK: - Initialization
     init(localizedName: String) {
@@ -52,6 +57,9 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
                                      direction: .source,
                                      clockType: .hostTime,
                                      source: self)
+        
+        // Set up camera frame handler
+        setupCameraFrameHandler()
     }
     
     // MARK: - Format Creation
@@ -183,7 +191,7 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         timer = nil
     }
     
-    // MARK: - Frame Generation (Test Pattern)
+    // MARK: - Frame Generation
     
     private func generateAndSendFrame() {
         autoreleasepool {
@@ -192,7 +200,13 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
             let formatDesc = format.formatDescription
             let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
             
-            // Create pixel buffer
+            // Try to get frame from camera
+            if let cameraFrame = getLatestCameraFrame() {
+                sendCameraFrame(cameraFrame, format: format)
+                return
+            }
+            
+            // Fallback to test pattern if no camera
             var pixelBuffer: CVPixelBuffer?
             let status = CVPixelBufferCreate(
                 kCFAllocatorDefault,
@@ -305,6 +319,66 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
                 }
             }
         }
+    }
+    
+    // MARK: - Camera Integration
+    
+    private func setupCameraFrameHandler() {
+        cameraManager.addFrameHandler { [weak self] pixelBuffer in
+            self?.handleCameraFrame(pixelBuffer)
+        }
+    }
+    
+    private func handleCameraFrame(_ pixelBuffer: CVPixelBuffer) {
+        frameBufferLock.lock()
+        latestCameraFrame = pixelBuffer
+        frameBufferLock.unlock()
+    }
+    
+    private func getLatestCameraFrame() -> CVPixelBuffer? {
+        frameBufferLock.lock()
+        let frame = latestCameraFrame
+        frameBufferLock.unlock()
+        return frame
+    }
+    
+    private func sendCameraFrame(_ cameraFrame: CVPixelBuffer, format: CMIOExtensionStreamFormat) {
+        // Convert camera frame to required format if needed
+        let outputBuffer = convertPixelBuffer(cameraFrame, to: format)
+        
+        // Create timing info
+        var timingInfo = CMSampleTimingInfo()
+        timingInfo.presentationTimeStamp = CMClockGetTime(CMClockGetHostTimeClock())
+        timingInfo.duration = format.maxFrameDuration
+        
+        // Create sample buffer and send
+        var sampleBuffer: CMSampleBuffer?
+        var formatDescription: CMFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+                                                    imageBuffer: outputBuffer,
+                                                    formatDescriptionOut: &formatDescription)
+        
+        if let formatDesc = formatDescription {
+            var sampleTiming = timingInfo
+            
+            CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: outputBuffer,
+                formatDescription: formatDesc,
+                sampleTiming: &sampleTiming,
+                sampleBufferOut: &sampleBuffer
+            )
+            
+            if let sampleBuffer = sampleBuffer {
+                stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: UInt64(timingInfo.presentationTimeStamp.seconds * 1_000_000_000))
+            }
+        }
+    }
+    
+    private func convertPixelBuffer(_ input: CVPixelBuffer, to format: CMIOExtensionStreamFormat) -> CVPixelBuffer {
+        // For now, just return the input
+        // TODO: Implement proper format conversion if needed
+        return input
     }
 }
 

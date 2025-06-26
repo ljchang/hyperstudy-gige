@@ -1,0 +1,3 @@
+#!/bin/sh
+"${SRCROOT}/Scripts/bundle_libraries.sh"
+

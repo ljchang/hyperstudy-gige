@@ -21,6 +21,16 @@ class CameraProviderSource: NSObject, CMIOExtensionProviderSource {
         super.init()
         
         provider = CMIOExtensionProvider(source: self, clientQueue: .main)
+        
+        // Create and add device immediately - this is required for the camera to be discoverable
+        deviceSource = CameraDeviceSource()
+        
+        do {
+            try provider.addDevice(deviceSource!.device)
+            logger.info("Virtual camera device added successfully during initialization")
+        } catch {
+            logger.error("Failed to add device during initialization: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - CMIOExtensionProviderSource
@@ -53,20 +63,8 @@ class CameraProviderSource: NSObject, CMIOExtensionProviderSource {
     func connect(to client: CMIOExtensionClient) throws {
         logger.info("Client connected: \(client.description)")
         
-        // Initialize Aravis if needed (will be implemented later)
-        // For now, create a test device
-        
-        if deviceSource == nil {
-            deviceSource = CameraDeviceSource()
-            
-            do {
-                try provider.addDevice(deviceSource!.device)
-                logger.info("Device added successfully")
-            } catch {
-                logger.error("Failed to add device: \(error.localizedDescription)")
-                throw error
-            }
-        }
+        // Device is already added during initialization
+        // In the future, this is where we could initialize Aravis connection
     }
     
     func disconnect(from client: CMIOExtensionClient) {

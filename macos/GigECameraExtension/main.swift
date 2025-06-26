@@ -9,12 +9,15 @@ import Foundation
 import CoreMediaIO
 import os.log
 
-let logger = Logger(subsystem: CameraConstants.BundleID.cameraExtension, category: "Main")
+// This is the entry point for the camera extension
+let logger = OSLog(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "Main")
 
-logger.info("Starting GigE Camera Extension...")
+os_log("GigE Camera Extension starting...", log: logger, type: .info)
 
-// Create and start the provider
 let providerSource = CameraProviderSource()
+
+os_log("Provider source created, starting CMIO service...", log: logger, type: .info)
+
 CMIOExtensionProvider.startService(provider: providerSource.provider)
 
-logger.info("GigE Camera Extension started successfully")
+os_log("CMIO service started", log: logger, type: .info)

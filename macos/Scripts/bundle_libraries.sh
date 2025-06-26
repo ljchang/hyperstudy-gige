@@ -25,6 +25,8 @@ LIBS=(
 for lib in "${LIBS[@]}"; do
     if [ -f "/opt/homebrew/lib/$lib" ]; then
         echo "Copying $lib..."
+        # Remove existing file if it exists
+        rm -f "$FRAMEWORKS_DIR/$lib"
         cp "/opt/homebrew/lib/$lib" "$FRAMEWORKS_DIR/" || true
     else
         echo "Warning: $lib not found"

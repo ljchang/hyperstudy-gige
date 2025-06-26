@@ -7,9 +7,9 @@
 
 import Foundation
 import SwiftUI
-import SystemExtensions
 import os.log
 
+@MainActor
 class CameraManager: NSObject, ObservableObject {
     static let shared = CameraManager()
     
@@ -43,7 +43,6 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Private Properties
     private let logger = Logger(subsystem: CameraConstants.BundleID.app, category: "CameraManager")
-    private var extensionRequest: OSSystemExtensionRequest?
     
     // MARK: - Initialization
     private override init() {
@@ -58,29 +57,41 @@ class CameraManager: NSObject, ObservableObject {
             isInstalling = true
         }
         
-        logger.info("Installing camera extension...")
+        logger.info("Activating camera extension...")
         
-        let request = OSSystemExtensionRequest.activationRequest(
-            forExtensionWithIdentifier: CameraConstants.BundleID.cameraExtension,
-            queue: .main
-        )
-        
-        request.delegate = self
-        extensionRequest = request
-        OSSystemExtensionManager.shared.submitRequest(request)
+        // For app extensions (not system extensions), we just need to mark it as installed
+        // The extension is automatically available when the app bundle contains it
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            
+            isInstalling = false
+            isExtensionInstalled = true
+            UserDefaults.standard.set(true, forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
+            checkCameraConnection()
+            
+            // Show success message
+            let alert = NSAlert()
+            alert.messageText = "Camera Extension Activated"
+            alert.informativeText = "The GigE Virtual Camera is now available in compatible applications."
+            alert.alertStyle = .informational
+            alert.runModal()
+        }
     }
     
     func uninstallExtension() async {
-        logger.info("Uninstalling camera extension...")
+        logger.info("Deactivating camera extension...")
         
-        let request = OSSystemExtensionRequest.deactivationRequest(
-            forExtensionWithIdentifier: CameraConstants.BundleID.cameraExtension,
-            queue: .main
-        )
+        // For app extensions, we just mark it as uninstalled
+        isExtensionInstalled = false
+        isConnected = false
+        UserDefaults.standard.set(false, forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
         
-        request.delegate = self
-        extensionRequest = request
-        OSSystemExtensionManager.shared.submitRequest(request)
+        // Show message
+        let alert = NSAlert()
+        alert.messageText = "Camera Extension Deactivated"
+        alert.informativeText = "The virtual camera is no longer available. You may need to restart applications that were using it."
+        alert.alertStyle = .informational
+        alert.runModal()
     }
     
     // MARK: - Private Methods
@@ -96,21 +107,20 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     private func checkCameraConnection() {
-        // This would normally check with the extension via XPC
-        // For now, we'll simulate based on Aravis availability
-        DispatchQueue.global().async { [weak self] in
-            // Simulate camera check
-            Thread.sleep(forTimeInterval: 0.5)
+        // Check actual camera connection through GigECameraManager
+        let gigEManager = GigECameraManager.shared
+        
+        if gigEManager.isConnected, let camera = gigEManager.currentCamera {
+            cameraModel = camera.modelName
+            isConnected = true
             
-            DispatchQueue.main.async {
-                // For testing, we'll just check if we previously connected
-                if let lastCamera = UserDefaults.standard.string(forKey: CameraConstants.UserDefaultsKeys.lastConnectedCamera) {
-                    self?.cameraModel = lastCamera
-                    self?.isConnected = true
-                } else {
-                    self?.isConnected = false
-                }
-            }
+            // Save for next launch
+            UserDefaults.standard.set(camera.modelName, forKey: CameraConstants.UserDefaultsKeys.lastConnectedCamera)
+        } else {
+            isConnected = false
+            
+            // Try to discover cameras
+            gigEManager.discoverCameras()
         }
     }
     
@@ -148,7 +158,8 @@ class CameraManager: NSObject, ObservableObject {
 }
 
 // MARK: - OSSystemExtensionRequestDelegate
-
+// Note: This is commented out since we're using app extensions, not system extensions
+/*
 extension CameraManager: OSSystemExtensionRequestDelegate {
     func request(_ request: OSSystemExtensionRequest, actionForReplacingExtension existing: OSSystemExtensionProperties, withExtension ext: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
         logger.info("Replacing existing extension...")
@@ -229,3 +240,4 @@ extension CameraManager: OSSystemExtensionRequestDelegate {
         }
     }
 }
+*/

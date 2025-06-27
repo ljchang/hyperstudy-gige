@@ -2,90 +2,158 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Overview
+
+This is a native macOS application that creates a virtual camera from GigE Vision cameras. The app uses:
+- Swift and SwiftUI for the main application
+- macOS Camera Extension API for virtual camera functionality
+- Aravis library (via Objective-C++ bridge) for GigE Vision camera support
+
 ## Common Development Commands
 
-### Setup and Installation
+### Building the Application
+
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Build debug version
+cd macos
+xcodebuild -project GigEVirtualCamera.xcodeproj -scheme GigECameraApp -configuration Debug
 
-# Install GenTL Producer (required for camera access)
-# For Matrix Vision cameras:
-sudo apt-get install mvimpact-acquire  # Linux
-# Or download from manufacturer website
+# Build release version
+xcodebuild -project GigEVirtualCamera.xcodeproj -scheme GigECameraApp -configuration Release
 
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your LiveKit credentials
+# Or use the convenience scripts:
+./Scripts/build_debug.sh
+./Scripts/build_release.sh
 ```
 
-### Running the Applications
+### Installing and Testing
 
 ```bash
-# List available cameras
-python examples/list_cameras.py
+# Install the built app
+./Scripts/install_app.sh
 
-# Run camera viewer with recording
-python src/gige_viewer.py
+# Reinstall camera extension (if virtual camera not appearing)
+./Scripts/reinstall_extension.sh
 
-# Run LiveKit streamer
-python src/gige_livekit_streamer.py
-
-# With custom GenTL producer path
-python src/gige_viewer.py --producer /path/to/GenTLProducer.cti
-
-# With config file
-python src/gige_livekit_streamer.py --config config/livekit.yaml
+# Run the app from command line (for debugging)
+open /Applications/GigEVirtualCamera.app
 ```
 
-### Testing
-```bash
-# Test camera connection
-python examples/list_cameras.py
+### Development in Xcode
 
-# Test viewer without recording
-python examples/basic_viewer.py
+```bash
+# Open project in Xcode
+open macos/GigEVirtualCamera.xcodeproj
 ```
 
 ## Architecture Overview
 
-### Core Components
+### Project Structure
 
-1. **GigECamera Module** (`src/gige_camera.py`)
-   - Wrapper around Harvesters library for GigE Vision cameras
-   - Handles camera discovery, connection, and frame acquisition
-   - Auto-detects common GenTL producers
-   - Provides unified interface for camera control
+```
+macos/
+├── GigECameraApp/          # Main application
+│   ├── ContentView.swift   # Main UI
+│   ├── AppDelegate.swift   # App lifecycle
+│   └── Info.plist         # App configuration
+├── GigECameraExtension/    # Camera Extension
+│   ├── ExtensionProvider.swift  # Camera extension implementation
+│   └── Info.plist         # Extension configuration
+├── Shared/                 # Shared code
+│   ├── AravisBridge/      # Objective-C++ Aravis wrapper
+│   ├── CameraManager.swift # Camera discovery and management
+│   └── CameraFrameSender.swift # Frame passing between app and extension
+├── Scripts/               # Build and utility scripts
+└── Resources/            # Assets and licenses
+```
 
-2. **GigE Viewer** (`src/gige_viewer.py`)
-   - Local display of camera feed using OpenCV
-   - Recording capabilities (video and snapshots)
-   - Keyboard controls for user interaction
-   - FPS counter and overlay information
+### Key Components
 
-3. **LiveKit Streamer** (`src/gige_livekit_streamer.py`)
-   - Streams camera feed to LiveKit WebRTC
-   - Async implementation using asyncio
-   - Configurable via YAML or environment variables
-   - Automatic token generation
+1. **AravisBridge** (`Shared/AravisBridge/`)
+   - Objective-C++ wrapper around Aravis C library
+   - Handles GigE Vision camera discovery and frame acquisition
+   - Converts Aravis frames to CVPixelBuffer for macOS
 
-### Key Design Decisions
+2. **Camera Extension** (`GigECameraExtension/`)
+   - Implements CMIOExtension protocol
+   - Receives frames from main app via XPC
+   - Provides virtual camera to macOS system
 
-- **Harvesters Library**: Used for universal GigE Vision support instead of camera-specific SDKs
-- **Separation of Concerns**: Camera module is separate from viewing/streaming logic
-- **Async for LiveKit**: Uses async/await for WebRTC streaming to handle network operations efficiently
-- **Configuration**: Supports both file-based (YAML) and environment variable configuration
+3. **Main Application** (`GigECameraApp/`)
+   - SwiftUI interface for camera selection and preview
+   - Manages camera connection and streaming
+   - Sends frames to extension via XPC
 
-### Frame Pipeline
+### Key Design Patterns
 
-1. Camera captures frame as numpy array (via Harvesters)
-2. Bayer pattern debayering if needed (handled in GigECamera)
-3. For viewer: Direct display with OpenCV
-4. For LiveKit: Convert to RGBA format before streaming
+- **XPC Communication**: Main app communicates with extension using XPC for frame data
+- **Singleton Pattern**: CameraManager uses singleton for camera state
+- **Bridge Pattern**: AravisBridge wraps C++ Aravis API for Swift consumption
+- **Delegation**: Camera events handled via delegate pattern
+
+### Common Tasks
+
+#### Adding New Camera Features
+
+1. Update AravisBridge to expose new Aravis functionality
+2. Add Swift wrapper methods in CameraManager
+3. Update UI in ContentView to expose controls
+
+#### Debugging Camera Issues
+
+```bash
+# Check if Aravis can see cameras
+brew install aravis
+arv-camera-test-0.8
+
+# Check system logs for extension issues
+log stream --predicate 'subsystem == "com.hyperstudy.GigEVirtualCamera"'
+
+# Debug extension loading
+systemextensionsctl list
+```
+
+#### Modifying Frame Processing
+
+Frame pipeline:
+1. Aravis captures frame → `AravisBridge::getFrame()`
+2. Convert to CVPixelBuffer → `AravisBridge` 
+3. Send via XPC → `CameraFrameSender`
+4. Receive in extension → `ExtensionProvider`
+5. Provide to macOS → `CMIOExtension` stream
+
+### Testing
+
+```bash
+# Test virtual camera appears in system
+system_profiler SPCameraDataType | grep "GigE Virtual Camera"
+
+# Test in QuickTime
+open -a "QuickTime Player"
+# File → New Movie Recording → Select "GigE Virtual Camera"
+```
 
 ### Common Issues and Solutions
 
-- **No cameras found**: Ensure GenTL producer is installed and path is correct
-- **Frame format issues**: Camera module handles Bayer to RGB conversion automatically
-- **LiveKit connection**: Check URL, credentials, and network connectivity
-- **Performance**: Adjust camera FPS and resolution in configuration
+1. **Virtual camera not appearing**
+   - Restart System Extension: `systemextensionsctl reset`
+   - Check extension is approved in System Settings
+   - Reinstall: `./Scripts/reinstall_extension.sh`
+
+2. **Camera discovery fails**
+   - Check network connectivity to camera
+   - Verify firewall allows GigE Vision traffic
+   - Test with `arv-camera-test-0.8`
+
+3. **Build errors**
+   - Ensure Aravis is installed: `brew install aravis`
+   - Clean build folder: `rm -rf macos/build`
+   - Reset package cache: `rm -rf ~/Library/Developer/Xcode/DerivedData`
+
+### Code Style Guidelines
+
+- Use Swift style guide conventions
+- Keep Objective-C++ code minimal in AravisBridge
+- Prefer Swift native types over Foundation when possible
+- Use async/await for asynchronous operations
+- Add documentation comments for public APIs

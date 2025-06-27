@@ -1,90 +1,107 @@
-# hyperstudy-gige
+# GigE Virtual Camera for macOS
 
-Python applications for viewing and streaming GigE Vision cameras, with local display/recording and LiveKit WebRTC streaming capabilities.
+A native macOS application that creates a virtual camera from GigE Vision cameras, enabling use with any macOS application that supports cameras (Zoom, Teams, OBS, QuickTime, etc.).
 
 ## Features
 
-- **Local Viewer**: Display GigE camera feed with OpenCV
-- **Recording**: Save video files and snapshots
-- **LiveKit Streaming**: Stream camera feed via WebRTC
-- **Universal Support**: Works with any GigE Vision compliant camera
+- **Native macOS Integration**: Appears as a standard camera in System Settings
+- **Universal GigE Support**: Works with any GigE Vision compliant camera via Aravis
+- **Virtual Camera**: Creates a macOS Camera Extension for system-wide use
+- **Real-time Preview**: Built-in preview window with camera controls
+- **Easy Installation**: Simple drag-and-drop installation
 
-## Current Status
+## Requirements
 
-- ✅ **arv-viewer-0.8** works perfectly for viewing the camera
-- ⚠️ **Python Aravis bindings** have segmentation fault issues in Anaconda environment
-- ✅ **Camera detected**: MRC Systems GmbH-GVRD-MRC MR-CAM-HR (169.254.90.244)
+- macOS 13.0 (Ventura) or later
+- GigE Vision compliant camera
+- Network connection to camera
 
-## Quick Start
+## Installation
+
+1. Download the latest release from the Releases page
+2. Open the DMG file and drag GigEVirtualCamera.app to Applications
+3. Launch the app and follow the setup instructions
+4. Grant necessary permissions when prompted
+
+## Building from Source
 
 ### Prerequisites
 
-1. Install a GenTL Producer for your camera:
-   - Matrix Vision: `mvGenTLProducer.cti`
-   - Basler: `ProducerPylon.cti`
-   - Allied Vision: `Vimba_gentl.cti`
+- Xcode 14.0 or later
+- macOS 13.0 SDK or later
+- Homebrew (for dependencies)
 
-2. Install Python dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-### Working Solution
-
-Currently, the most reliable way to view the camera:
-```bash
-arv-viewer-0.8
-```
-
-### Python Implementations (In Development)
-
-The Python implementations are in the `python/` directory but face compatibility issues:
+### Build Steps
 
 ```bash
-cd python/
+# Clone the repository
+git clone https://github.com/yourusername/hyperstudy-gige.git
+cd hyperstudy-gige
 
-# List cameras (if it works)
-python examples/list_cameras.py
+# Install dependencies
+cd macos
+./Scripts/setup_dependencies.sh
 
-# View camera (currently segfaults)
-python src/gige_viewer.py --aravis
+# Build the app
+./Scripts/build_release.sh
+
+# The built app will be at: macos/build/Release/GigEVirtualCamera.app
 ```
 
-See `python/README.md` for details on Python implementation status.
+### Development
 
-## Project Structure
+Open `macos/GigEVirtualCamera.xcodeproj` in Xcode for development.
 
-```
-hyperstudy-gige/
-├── python/                    # Python implementations
-│   ├── src/                   # Source code
-│   ├── config/                # Configuration files
-│   ├── examples/              # Example scripts
-│   ├── recordings/            # Output directory
-│   └── requirements.txt       # Python dependencies
-├── WORKAROUND.md              # Solutions for current issues
-├── setup_network.sh           # Network setup script
-└── gstreamer_viewer.sh        # GStreamer test script
-```
+## Usage
 
-## Other Approaches to Try
+1. **Launch the App**: Open GigEVirtualCamera from Applications
+2. **Select Camera**: Choose your GigE camera from the dropdown
+3. **Start Streaming**: Click "Start" to begin streaming
+4. **Use in Apps**: Select "GigE Virtual Camera" in any app's camera settings
 
-1. **C++ Implementation** - Use Aravis C API directly
-2. **Rust Implementation** - Use aravis-rs bindings
-3. **Node.js** - Use node-aravis if available
-4. **Different Camera SDK** - Check MRC Systems website
+## Troubleshooting
 
-## Configuration
+### Camera Not Detected
 
-### Environment Variables
-- `LIVEKIT_URL`: LiveKit server URL
-- `LIVEKIT_API_KEY`: API key for token generation
-- `LIVEKIT_API_SECRET`: API secret for token generation
-- `GENTL_PRODUCER_PATH`: Path to GenTL producer (optional)
+- Ensure camera is connected to the same network
+- Check firewall settings allow GigE Vision traffic
+- Try refreshing the camera list
 
-### Configuration File
-See `config/livekit_example.yaml` for YAML configuration options.
+### Virtual Camera Not Appearing
+
+- Restart the app
+- Check System Settings > Privacy & Security > Camera
+- Reinstall the camera extension: `./Scripts/reinstall_extension.sh`
+
+### Performance Issues
+
+- Reduce camera resolution or frame rate
+- Ensure good network connection to camera
+- Close other resource-intensive applications
+
+## Architecture
+
+The project consists of:
+
+- **GigECameraApp**: Main application with UI and camera management
+- **GigECameraExtension**: macOS Camera Extension providing virtual camera
+- **AravisBridge**: Objective-C++ bridge to Aravis GigE Vision library
+- **Shared**: Common code between app and extension
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
-MIT License
+MIT License - see LICENSE file for details
+
+## Acknowledgments
+
+- [Aravis](https://github.com/AravisProject/aravis) - GigE Vision library
+- Apple's Camera Extension sample code

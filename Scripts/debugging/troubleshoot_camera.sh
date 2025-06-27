@@ -14,10 +14,20 @@ fi
 
 # 2. Check extension bundle
 echo -e "\n2. Checking extension bundle..."
-if [ -d "/Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex" ]; then
-    echo "   ✓ Extension bundle found"
+# Check for System Extension (current implementation)
+if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
+    echo "   ✓ System Extension bundle found"
+    EXTENSION_TYPE="systemextension"
+    EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+# Check for App Extension (legacy)
+elif [ -d "/Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex" ]; then
+    echo "   ✓ App Extension bundle found"
+    EXTENSION_TYPE="appex"
+    EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex"
 else
-    echo "   ✗ Extension bundle not found"
+    echo "   ✗ No extension bundle found"
+    echo "   Looking for extensions..."
+    find /Applications/GigEVirtualCamera.app -name "*.systemextension" -o -name "*.appex" 2>/dev/null
     exit 1
 fi
 
@@ -27,16 +37,28 @@ codesign --verify --verbose=4 /Applications/GigEVirtualCamera.app 2>&1 | grep -E
 
 # 4. Check entitlements
 echo -e "\n4. Checking extension entitlements..."
-codesign -d --entitlements - /Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex 2>&1 | grep -E "(camera|sandbox|application-groups)"
+codesign -d --entitlements - "$EXTENSION_PATH" 2>&1 | grep -E "(camera|sandbox|application-groups)"
 
-# 5. Try manual plugin registration
-echo -e "\n5. Attempting manual registration..."
-pluginkit -a /Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex
-sleep 1
+# 5. Try registration based on extension type
+echo -e "\n5. Attempting registration..."
+if [ "$EXTENSION_TYPE" = "appex" ]; then
+    echo "   Registering App Extension with pluginkit..."
+    pluginkit -a "$EXTENSION_PATH"
+    sleep 1
+elif [ "$EXTENSION_TYPE" = "systemextension" ]; then
+    echo "   System Extensions are registered via the app"
+    echo "   Checking systemextensionsctl..."
+    systemextensionsctl list | grep -i gige || echo "   Extension not found in system extension list"
+fi
 
 # 6. Check registration
 echo -e "\n6. Checking registration..."
-pluginkit -m -p com.apple.cmio-camera-extension | grep -i gige || echo "   Extension not found in pluginkit"
+if [ "$EXTENSION_TYPE" = "appex" ]; then
+    pluginkit -m -p com.apple.cmio-camera-extension | grep -i gige || echo "   Extension not found in pluginkit"
+else
+    echo "   Checking system camera list..."
+    system_profiler SPCameraDataType | grep -A3 "GigE Virtual Camera" || echo "   Camera not found in system profiler"
+fi
 
 # 7. Check Privacy & Security settings
 echo -e "\n7. Camera Privacy Settings..."

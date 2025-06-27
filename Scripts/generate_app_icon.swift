@@ -15,32 +15,62 @@ func createAppIcon(size: CGSize, scale: CGFloat = 1.0) -> NSImage? {
     let cornerRadius = actualSize.width * 0.18
     let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
     
-    // Grey background similar to system preference panes
-    NSColor(calibratedWhite: 0.95, alpha: 1.0).setFill()
+    // Grey background matching the app's theme
+    NSColor(calibratedWhite: 0.85, alpha: 1.0).setFill()
     path.fill()
-    
-    // Draw green camera icon
-    let iconSize = actualSize.width * 0.6
-    let iconRect = NSRect(
-        x: (actualSize.width - iconSize) / 2,
-        y: (actualSize.height - iconSize) / 2,
-        width: iconSize,
-        height: iconSize
-    )
     
     // Green color matching the status green in the app
     let greenColor = NSColor(red: 50/255.0, green: 215/255.0, blue: 75/255.0, alpha: 1.0)
     
-    // Create the camera symbol
-    let config = NSImage.SymbolConfiguration(pointSize: iconSize * 0.7, weight: .medium, scale: .large)
-    if let cameraImage = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: nil) {
-        let tintedImage = cameraImage.withSymbolConfiguration(config)
-        tintedImage?.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-        
-        // Apply green tint
-        greenColor.set()
-        iconRect.fill(using: .sourceAtop)
-    }
+    // Draw camera body
+    let cameraWidth = actualSize.width * 0.5
+    let cameraHeight = actualSize.height * 0.35
+    let cameraX = (actualSize.width - cameraWidth) / 2
+    let cameraY = (actualSize.height - cameraHeight) / 2
+    
+    // Camera body
+    let cameraRect = NSRect(x: cameraX, y: cameraY, width: cameraWidth, height: cameraHeight)
+    let cameraPath = NSBezierPath(roundedRect: cameraRect, xRadius: cameraWidth * 0.1, yRadius: cameraWidth * 0.1)
+    greenColor.setFill()
+    cameraPath.fill()
+    
+    // Camera lens (circle in center)
+    let lensSize = cameraHeight * 0.7
+    let lensRect = NSRect(
+        x: cameraX + (cameraWidth - lensSize) / 2,
+        y: cameraY + (cameraHeight - lensSize) / 2,
+        width: lensSize,
+        height: lensSize
+    )
+    let lensPath = NSBezierPath(ovalIn: lensRect)
+    // Use the same grey as the background
+    NSColor(calibratedWhite: 0.85, alpha: 1.0).setFill()
+    lensPath.fill()
+    
+    // Inner lens circle
+    let innerLensSize = lensSize * 0.7
+    let innerLensRect = NSRect(
+        x: lensRect.minX + (lensSize - innerLensSize) / 2,
+        y: lensRect.minY + (lensSize - innerLensSize) / 2,
+        width: innerLensSize,
+        height: innerLensSize
+    )
+    let innerLensPath = NSBezierPath(ovalIn: innerLensRect)
+    greenColor.withAlphaComponent(0.8).setFill()
+    innerLensPath.fill()
+    
+    // Camera viewfinder on top
+    let viewfinderWidth = cameraWidth * 0.25
+    let viewfinderHeight = cameraHeight * 0.2
+    let viewfinderRect = NSRect(
+        x: cameraX + (cameraWidth - viewfinderWidth) / 2,
+        y: cameraY + cameraHeight - viewfinderHeight * 0.3,
+        width: viewfinderWidth,
+        height: viewfinderHeight
+    )
+    let viewfinderPath = NSBezierPath(roundedRect: viewfinderRect, xRadius: viewfinderWidth * 0.2, yRadius: viewfinderWidth * 0.2)
+    greenColor.setFill()
+    viewfinderPath.fill()
     
     image.unlockFocus()
     
@@ -73,7 +103,7 @@ let sizes: [(size: Int, scale: Int)] = [
     (512, 1), (512, 2)   // 512pt @1x and @2x
 ]
 
-let assetsPath = "/Users/lukechang/Github/hyperstudy-gige/macos/GigECameraApp/Assets.xcassets/AppIcon.appiconset"
+let assetsPath = "/Users/lukechang/Github/hyperstudy-gige/GigECameraApp/Assets.xcassets/AppIcon.appiconset"
 
 for (baseSize, scale) in sizes {
     let actualSize = baseSize * scale

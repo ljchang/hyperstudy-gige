@@ -20,14 +20,19 @@ class CameraProviderSource: NSObject, CMIOExtensionProviderSource {
     override init() {
         super.init()
         
+        logger.info("CameraProviderSource initializing...")
+        
         provider = CMIOExtensionProvider(source: self, clientQueue: .main)
+        logger.info("CMIOExtensionProvider created")
         
         // Create and add device immediately - this is required for the camera to be discoverable
         deviceSource = CameraDeviceSource()
+        logger.info("CameraDeviceSource created")
         
         do {
             try provider.addDevice(deviceSource!.device)
             logger.info("Virtual camera device added successfully during initialization")
+            logger.info("Device ID: \(deviceSource!.device.deviceID)")
         } catch {
             logger.error("Failed to add device during initialization: \(error.localizedDescription)")
         }

@@ -23,6 +23,7 @@
 		B551F5159F663437427B4C02 /* AravisBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5674B0FC765DBF41227A079F /* AravisBridge.mm */; };
 		C3245C66397FF46C0F9966DE /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B13E11AD4F64865C4BD3C5 /* DesignSystem.swift */; };
 		DF218341570648066EE4D859 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08987548898558EC7975B0D2 /* CameraManager.swift */; };
+		E331A8942E0E4717000CF37F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E331A8922E0E44E6000CF37F /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +67,7 @@
 		B9D3B1C10327A504D959DA68 /* CameraProviderSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraProviderSource.swift; sourceTree = "<group>"; };
 		CF3E57029895AF9F5F03979A /* CameraDeviceSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraDeviceSource.swift; sourceTree = "<group>"; };
 		DDDCF56FEE60EEC8CE62D5B3 /* CameraConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraConstants.swift; sourceTree = "<group>"; };
+		E331A8922E0E44E6000CF37F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E3CEEF7CF0CF1835666C90C5 /* GigEVirtualCamera-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GigEVirtualCamera-Bridging-Header.h"; sourceTree = "<group>"; };
 		F0F0CDEE2ACE54DF0EEA39AD /* GigECameraExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GigECameraExtension.entitlements; sourceTree = "<group>"; };
 		F5498F5AFDED38343B6801C8 /* GigECameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GigECameraManager.swift; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 		2A3E3371242882E8ADD87C08 /* GigECameraApp */ = {
 			isa = PBXGroup;
 			children = (
+				E331A8922E0E44E6000CF37F /* Assets.xcassets */,
 				08987548898558EC7975B0D2 /* CameraManager.swift */,
 				25B0B794181488800BEAEB3A /* ContentView.swift */,
 				FE1E7B53D0144A617847482B /* GigECamera.entitlements */,
@@ -161,6 +164,7 @@
 				4ED6D124F202D4658B1EDFC5 /* Bundle Aravis Libraries */,
 				7A8B9C0D1E2F3A4B5C6D7E8F /* Cleanup AppEx */,
 				8F9A0B1C2D3E4F5A6B7C8D9E /* Sign Frameworks */,
+				E331A8932E0E470C000CF37F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -211,6 +215,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E331A8932E0E470C000CF37F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E331A8942E0E4717000CF37F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		129E59276CF8FAF4DF6C4655 /* Make Scripts Executable */ = {

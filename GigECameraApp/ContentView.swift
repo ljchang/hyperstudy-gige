@@ -288,14 +288,29 @@ class PreviewFrameHandler: ObservableObject {
     func startReceivingFrames() {
         print("PreviewFrameHandler: Starting to receive frames")
         
+        // Check if camera is connected first
+        guard gigEManager.isConnected else {
+            print("PreviewFrameHandler: Camera not connected, cannot start preview")
+            return
+        }
         
         // Start streaming if not already
         if !gigEManager.isStreaming {
             print("PreviewFrameHandler: Starting streaming...")
             gigEManager.startStreaming()
+            
+            // Give it a moment to start
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.setupFrameHandler()
+            }
         } else {
             print("PreviewFrameHandler: Already streaming")
+            setupFrameHandler()
         }
+    }
+    
+    private func setupFrameHandler() {
+        print("PreviewFrameHandler: Setting up frame handler")
         
         // Add frame handler with simpler conversion
         gigEManager.addFrameHandler { [weak self] pixelBuffer in

@@ -23,7 +23,7 @@
     <key>CMIOExtension</key>
     <dict>
         <key>CMIOExtensionMachServiceName</key>
-        <string>$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+        <string>S368GH6KF7.com.lukechang.GigEVirtualCamera.Extension</string>
         <key>CMIOExtensionCategory</key>
         <string>VideoDevice</string>
     </dict>

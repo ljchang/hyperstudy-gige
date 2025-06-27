@@ -81,12 +81,19 @@ Open `macos/GigEVirtualCamera.xcodeproj` in Xcode for development.
 
 ## Architecture
 
-The project consists of:
+The project uses a simplified architecture where both the main app and camera extension share the same camera manager instance:
 
-- **GigECameraApp**: Main application with UI and camera management
-- **GigECameraExtension**: macOS Camera Extension providing virtual camera
-- **AravisBridge**: Objective-C++ bridge to Aravis GigE Vision library
-- **Shared**: Common code between app and extension
+- **GigECameraApp**: Main application with UI, camera discovery, and settings
+- **GigECameraExtension**: CMIOExtension that provides the virtual camera to macOS
+- **GigECameraManager**: Shared singleton that handles camera communication for both app and extension
+- **AravisBridge**: Objective-C++ wrapper around the Aravis GigE Vision library
+- **Shared**: Common code including camera management and frame distribution
+
+Key benefits:
+- No complex IPC or XPC communication needed
+- Direct frame access in the extension
+- Simplified debugging and maintenance
+- Better performance with less overhead
 
 ## Contributing
 

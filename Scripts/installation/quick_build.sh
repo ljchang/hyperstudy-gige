@@ -18,6 +18,9 @@ mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/Resources
 cp GigECameraApp/Info.plist build/QuickBuild/GigEVirtualCamera.app/Contents/
 cp GigECameraExtension/Info.plist build/QuickBuild/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/
 
+# Navigate to project root
+cd "$(dirname "$0")/../.."
+
 # Try using xcodebuild with explicit file lists
 echo "Building main app..."
 xcodebuild -project GigEVirtualCamera.xcodeproj \

@@ -1,0 +1,98 @@
+name: GigEVirtualCamera
+options:
+  bundleIdPrefix: com.lukechang
+  deploymentTarget:
+    macOS: "12.3"
+  developmentLanguage: en
+  
+settings:
+  DEVELOPMENT_TEAM: S368GH6KF7
+  CODE_SIGN_STYLE: Manual
+  CODE_SIGN_IDENTITY: "Apple Development"
+  # Aravis settings
+  HEADER_SEARCH_PATHS: 
+    - /opt/homebrew/include
+    - /opt/homebrew/Cellar/aravis/0.8.35/include/aravis-0.8
+    - /opt/homebrew/Cellar/glib/2.84.3/include
+    - /opt/homebrew/Cellar/glib/2.84.3/include/glib-2.0
+    - /opt/homebrew/Cellar/glib/2.84.3/lib/glib-2.0/include
+    - /opt/homebrew/opt/gettext/include
+    - /opt/homebrew/Cellar/pcre2/10.45/include
+    - /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk/usr/include/ffi
+  LIBRARY_SEARCH_PATHS:
+    - /opt/homebrew/lib
+    - /opt/homebrew/Cellar/aravis/0.8.35/lib
+  OTHER_LDFLAGS:
+    - -laravis-0.8
+    - -lgio-2.0
+    - -lgobject-2.0
+    - -lglib-2.0
+    - -ObjC
+    - -all_load
+  
+targets:
+  GigEVirtualCamera:
+    type: application
+    platform: macOS
+    sources:
+      - GigECameraApp
+      - path: Shared
+        excludes:
+          # Uncomment to use stub implementation
+          # - "*.mm"
+          # - "*.h"
+          # Comment out to use real Aravis implementation
+          - "AravisBridge-Stub.swift"
+    dependencies:
+      - target: GigECameraExtension
+        embed: true
+        codeSign: true
+        embedInSubfolder: PlugIns
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera
+      INFOPLIST_FILE: GigECameraApp/Info.plist
+      CODE_SIGN_ENTITLEMENTS: GigECameraApp/GigECamera.entitlements
+      SWIFT_VERSION: 5.0
+      MARKETING_VERSION: 1.0
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
+      OTHER_LDFLAGS: $(inherited)
+      PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
+    preBuildScripts:
+      - script: |
+          if [ -d "${SRCROOT}/Scripts" ]; then
+            chmod +x "${SRCROOT}/Scripts/"*.sh
+          fi
+        name: Make Scripts Executable
+        basedOnDependencyAnalysis: false
+    postBuildScripts:
+      - script: |
+          if [ "${CONFIGURATION}" = "Debug" ] || [ "${CONFIGURATION}" = "Release" ]; then
+            "${SRCROOT}/Scripts/bundle_aravis.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
+            "${SRCROOT}/Scripts/fix_rpaths.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
+          fi
+        name: Bundle Aravis Libraries
+        basedOnDependencyAnalysis: false
+          
+  GigECameraExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - GigECameraExtension
+      - path: Shared
+        excludes:
+          # Uncomment to use stub implementation
+          # - "*.mm"
+          # - "*.h"
+          # Comment out to use real Aravis implementation
+          - "AravisBridge-Stub.swift"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera.Extension
+      INFOPLIST_FILE: GigECameraExtension/Info.plist
+      CODE_SIGN_ENTITLEMENTS: GigECameraExtension/GigECameraExtension.entitlements
+      SWIFT_VERSION: 5.0
+      MARKETING_VERSION: 1.0
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
+      OTHER_LDFLAGS: $(inherited)
+      PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"

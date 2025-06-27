@@ -1,0 +1,886 @@
+//
+//  AravisBridge.mm
+//  GigEVirtualCamera
+//
+//  Objective-C++ implementation bridging Aravis to Swift
+//
+
+#import "AravisBridge.h"
+#import <dispatch/dispatch.h>
+
+extern "C" {
+#include <arv.h>
+}
+
+@implementation AravisCamera {
+    NSString *_name;
+    NSString *_modelName;
+    NSString *_deviceId;
+    NSString *_ipAddress;
+}
+
+- (instancetype)initWithDeviceId:(NSString *)deviceId 
+                            name:(NSString *)name 
+                       modelName:(NSString *)modelName 
+                       ipAddress:(NSString *)ipAddress {
+    self = [super init];
+    if (self) {
+        _deviceId = deviceId;
+        _name = name;
+        _modelName = modelName;
+        _ipAddress = ipAddress;
+    }
+    return self;
+}
+
+@end
+
+@interface AravisBridge () {
+    ArvCamera *_camera;
+    ArvStream *_stream;
+    dispatch_queue_t _frameQueue;
+    dispatch_source_t _frameTimer;
+    NSString *_preferredPixelFormat;
+}
+@end
+
+@implementation AravisBridge
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _state = AravisCameraStateDisconnected;
+        _frameQueue = dispatch_queue_create("com.lukechang.gigecamera.framequeue", DISPATCH_QUEUE_SERIAL);
+        _preferredPixelFormat = @"Auto";
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [self disconnect];
+}
+
+#pragma mark - Discovery
+
++ (NSArray<AravisCamera *> *)discoverCameras {
+    NSLog(@"AravisBridge: Starting camera discovery...");
+    arv_update_device_list();
+    
+    NSMutableArray<AravisCamera *> *cameras = [NSMutableArray array];
+    guint n_devices = arv_get_n_devices();
+    NSLog(@"AravisBridge: Found %u devices", n_devices);
+    
+    for (guint i = 0; i < n_devices; i++) {
+        const char *device_id = arv_get_device_id(i);
+        const char *physical_id = arv_get_device_physical_id(i);
+        const char *model = arv_get_device_model(i);
+        const char *vendor = arv_get_device_vendor(i);
+        
+        if (device_id) {
+            NSString *name = [NSString stringWithFormat:@"%s %s", 
+                            vendor ?: "Unknown", 
+                            model ?: "Camera"];
+            NSString *modelName = [NSString stringWithUTF8String:model ?: "Unknown"];
+            NSString *deviceId = [NSString stringWithUTF8String:device_id];
+            NSString *ipAddress = [NSString stringWithUTF8String:physical_id ?: ""];
+            
+            AravisCamera *camera = [[AravisCamera alloc] initWithDeviceId:deviceId
+                                                                     name:name
+                                                                modelName:modelName
+                                                                ipAddress:ipAddress];
+            [cameras addObject:camera];
+            NSLog(@"AravisBridge: Added camera %@ at %@", name, ipAddress);
+        }
+    }
+    
+    NSLog(@"AravisBridge: Returning %lu cameras", (unsigned long)cameras.count);
+    return cameras;
+}
+
+#pragma mark - Connection
+
+- (BOOL)connectToCamera:(AravisCamera *)camera {
+    return [self connectToCameraAtAddress:camera.ipAddress];
+}
+
+- (BOOL)connectToCameraAtAddress:(NSString *)ipAddress {
+    @synchronized(self) {
+        if (_state != AravisCameraStateDisconnected) {
+            [self disconnect];
+        }
+        
+        [self setState:AravisCameraStateConnecting];
+        
+        GError *error = NULL;
+        _camera = arv_camera_new([ipAddress UTF8String], &error);
+        
+        if (!_camera) {
+            [self handleError:error message:@"Failed to connect to camera"];
+            if (error) g_error_free(error);
+            return NO;
+        }
+        
+        // Get camera info
+        const char *vendor = arv_camera_get_vendor_name(_camera, NULL);
+        const char *model = arv_camera_get_model_name(_camera, NULL);
+        const char *device_id = arv_camera_get_device_id(_camera, NULL);
+        
+        _currentCamera = [[AravisCamera alloc] initWithDeviceId:[NSString stringWithUTF8String:device_id ?: ""]
+                                                           name:[NSString stringWithFormat:@"%s %s", vendor ?: "", model ?: ""]
+                                                      modelName:[NSString stringWithUTF8String:model ?: ""]
+                                                      ipAddress:ipAddress];
+        
+        // Configure GigE-specific settings for better streaming
+        NSLog(@"AravisBridge: Configuring GigE settings");
+        
+        // Set packet size (MTU)
+        // Try to use jumbo frames if supported, otherwise fall back to standard
+        arv_camera_gv_set_packet_size(_camera, 8228, &error);
+        if (error) {
+            NSLog(@"AravisBridge: Failed to set jumbo frames, using standard MTU: %s", error->message);
+            g_error_free(error);
+            error = NULL;
+            arv_camera_gv_set_packet_size(_camera, 1400, &error); // Slightly less than 1500 to account for headers
+            if (error) {
+                NSLog(@"AravisBridge: Failed to set packet size: %s", error->message);
+                g_error_free(error);
+            } else {
+                NSLog(@"AravisBridge: Set packet size to 1400");
+            }
+        } else {
+            NSLog(@"AravisBridge: Set packet size to 8228 (jumbo frames)");
+        }
+        
+        // Set packet delay to prevent overwhelming the network
+        // Use a more conservative delay
+        arv_camera_gv_set_packet_delay(_camera, 750, NULL); // Match what the camera reports as current
+        NSLog(@"AravisBridge: Set packet delay to 750 ns");
+        
+        // Ensure the camera is in the right pixel format
+        error = NULL;
+        const char *pixel_format = arv_camera_get_pixel_format_as_string(_camera, &error);
+        if (!error && pixel_format) {
+            NSLog(@"AravisBridge: Camera pixel format: %s", pixel_format);
+        }
+        if (error) {
+            g_error_free(error);
+        }
+        
+        [self setState:AravisCameraStateConnected];
+        return YES;
+    }
+}
+
+- (void)disconnect {
+    @synchronized(self) {
+        [self stopStreaming];
+        
+        if (_camera) {
+            g_object_unref(_camera);
+            _camera = NULL;
+        }
+        
+        _currentCamera = nil;
+        [self setState:AravisCameraStateDisconnected];
+    }
+}
+
+#pragma mark - Streaming
+
+- (BOOL)startStreaming {
+    NSLog(@"AravisBridge: startStreaming called, state=%ld", (long)_state);
+    if (!_camera || _state != AravisCameraStateConnected) {
+        NSLog(@"AravisBridge: Cannot start streaming - camera=%p, state=%ld", _camera, (long)_state);
+        return NO;
+    }
+    
+    GError *error = NULL;
+    
+    // Create stream
+    NSLog(@"AravisBridge: Creating stream...");
+    _stream = arv_camera_create_stream(_camera, NULL, NULL, &error);
+    if (!_stream) {
+        [self handleError:error message:@"Failed to create stream"];
+        if (error) g_error_free(error);
+        return NO;
+    }
+    NSLog(@"AravisBridge: Stream created successfully");
+    
+    // Configure stream
+    NSLog(@"AravisBridge: Setting acquisition mode to continuous");
+    arv_camera_set_acquisition_mode(_camera, ARV_ACQUISITION_MODE_CONTINUOUS, &error);
+    if (error) {
+        NSLog(@"AravisBridge: Error setting acquisition mode: %s", error->message);
+        g_error_free(error);
+        error = NULL;
+    }
+    
+    // For now, we'll skip trigger mode configuration since the API might be different
+    // Most cameras default to free-running mode anyway
+    
+    // Get payload size
+    guint payload = arv_camera_get_payload(_camera, &error);
+    if (error) {
+        NSLog(@"AravisBridge: Error getting payload size: %s", error->message);
+        g_error_free(error);
+        return NO;
+    }
+    NSLog(@"AravisBridge: Payload size = %u bytes", payload);
+    
+    // Configure stream before pushing buffers
+    // This is crucial for GigE cameras
+    arv_stream_set_emit_signals(_stream, FALSE); // We're polling, not using signals
+    
+    // For debugging, let's check the stream type
+    NSLog(@"AravisBridge: Stream type: %s", g_type_name(G_OBJECT_TYPE(_stream)));
+    
+    // Configure GigE stream specifically
+    if (ARV_IS_GV_STREAM(_stream)) {
+        NSLog(@"AravisBridge: Configuring GigE stream...");
+        
+        // Enable packet resend (this is critical for reliable streaming)
+        g_object_set(_stream, "packet-resend", TRUE, NULL);
+        
+        // Set initial packet timeout (in microseconds)
+        g_object_set(_stream, "packet-timeout", 40000, NULL);  // 40ms
+        
+        // Set frame retention time (in microseconds)
+        g_object_set(_stream, "frame-retention", 200000, NULL);  // 200ms
+        
+        NSLog(@"AravisBridge: GigE stream configured with packet resend enabled");
+    }
+    
+    // Push buffers
+    NSLog(@"AravisBridge: Pushing %d buffers of size %u", 10, payload);
+    for (int i = 0; i < 10; i++) {
+        ArvBuffer *buffer = arv_buffer_new(payload, NULL);
+        if (buffer) {
+            arv_stream_push_buffer(_stream, buffer);
+        } else {
+            NSLog(@"AravisBridge: Failed to allocate buffer %d", i);
+        }
+    }
+    
+    // Start acquisition
+    NSLog(@"AravisBridge: Starting acquisition");
+    arv_camera_start_acquisition(_camera, &error);
+    if (error) {
+        NSLog(@"AravisBridge: Error starting acquisition: %s", error->message);
+        g_error_free(error);
+        return NO;
+    }
+    
+    [self setState:AravisCameraStateStreaming];
+    NSLog(@"AravisBridge: State set to streaming");
+    
+    // Start frame processing
+    dispatch_async(_frameQueue, ^{
+        NSLog(@"AravisBridge: Frame processing thread started");
+        [self processFrames];
+        NSLog(@"AravisBridge: Frame processing thread ended");
+    });
+    
+    return YES;
+}
+
+- (void)stopStreaming {
+    if (_state == AravisCameraStateStreaming && _camera) {
+        arv_camera_stop_acquisition(_camera, NULL);
+    }
+    
+    if (_stream) {
+        g_object_unref(_stream);
+        _stream = NULL;
+    }
+    
+    if (_state == AravisCameraStateStreaming) {
+        [self setState:AravisCameraStateConnected];
+    }
+}
+
+#pragma mark - Frame Processing
+
+- (void)processFrames {
+    int frameCount = 0;
+    int timeoutCount = 0;
+    NSLog(@"AravisBridge: processFrames started");
+    
+    // Get stream statistics before starting
+    if (ARV_IS_GV_STREAM(_stream)) {
+        guint64 n_completed_buffers = 0;
+        guint64 n_failures = 0;
+        guint64 n_underruns = 0;
+        
+        g_object_get(_stream,
+                     "n-completed-buffers", &n_completed_buffers,
+                     "n-failures", &n_failures,
+                     "n-underruns", &n_underruns,
+                     NULL);
+        
+        NSLog(@"AravisBridge: Initial stream stats - completed: %llu, failures: %llu, underruns: %llu",
+              n_completed_buffers, n_failures, n_underruns);
+    }
+    
+    while (_state == AravisCameraStateStreaming && _stream) {
+        ArvBuffer *buffer = arv_stream_timeout_pop_buffer(_stream, 1000000); // 1 second timeout
+        
+        if (buffer) {
+            ArvBufferStatus status = arv_buffer_get_status(buffer);
+            if (status == ARV_BUFFER_STATUS_SUCCESS) {
+                frameCount++;
+                if (frameCount % 30 == 1) {
+                    NSLog(@"AravisBridge: Received frame %d", frameCount);
+                }
+                [self processBuffer:buffer];
+            } else {
+                NSLog(@"AravisBridge: Buffer status error: %d", status);
+                // Log more details about the error
+                switch (status) {
+                    case ARV_BUFFER_STATUS_UNKNOWN:
+                        NSLog(@"AravisBridge: Buffer error details: Unknown status");
+                        break;
+                    case ARV_BUFFER_STATUS_TIMEOUT:
+                        NSLog(@"AravisBridge: Buffer error details: Timeout");
+                        break;
+                    case ARV_BUFFER_STATUS_MISSING_PACKETS:
+                        NSLog(@"AravisBridge: Buffer error details: Missing packets");
+                        break;
+                    case ARV_BUFFER_STATUS_WRONG_PACKET_ID:
+                        NSLog(@"AravisBridge: Buffer error details: Wrong packet ID");
+                        break;
+                    case ARV_BUFFER_STATUS_SIZE_MISMATCH:
+                        NSLog(@"AravisBridge: Buffer error details: Size mismatch");
+                        break;
+                    case ARV_BUFFER_STATUS_FILLING:
+                        NSLog(@"AravisBridge: Buffer error details: Filling");
+                        break;
+                    case ARV_BUFFER_STATUS_ABORTED:
+                        NSLog(@"AravisBridge: Buffer error details: Aborted");
+                        break;
+                    default:
+                        NSLog(@"AravisBridge: Buffer error details: Other error (%d)", status);
+                        break;
+                }
+            }
+            arv_stream_push_buffer(_stream, buffer);
+        } else {
+            timeoutCount++;
+            NSLog(@"AravisBridge: Timeout waiting for frame (timeout #%d)", timeoutCount);
+            
+            // Check stream statistics
+            if (ARV_IS_GV_STREAM(_stream)) {
+                guint64 n_completed_buffers = 0;
+                guint64 n_failures = 0;
+                guint64 n_underruns = 0;
+                guint64 n_resent_packets = 0;
+                guint64 n_missing_packets = 0;
+                
+                g_object_get(_stream,
+                             "n-completed-buffers", &n_completed_buffers,
+                             "n-failures", &n_failures,
+                             "n-underruns", &n_underruns,
+                             "n-resent-packets", &n_resent_packets,
+                             "n-missing-packets", &n_missing_packets,
+                             NULL);
+                
+                NSLog(@"AravisBridge: Stream stats - completed: %llu, failures: %llu, underruns: %llu, resent: %llu, missing: %llu",
+                      n_completed_buffers, n_failures, n_underruns, n_resent_packets, n_missing_packets);
+            }
+            
+            // Only check connection after first timeout
+            if (timeoutCount == 1) {
+                NSLog(@"AravisBridge: Checking camera state after first timeout");
+                gboolean is_connected = arv_camera_is_gv_device(_camera);
+                if (!is_connected) {
+                    NSLog(@"AravisBridge: Camera disconnected, stopping streaming");
+                    break;
+                }
+            }
+        }
+    }
+    
+    NSLog(@"AravisBridge: processFrames ended - received %d frames, %d timeouts", frameCount, timeoutCount);
+}
+
+- (void)processBuffer:(ArvBuffer *)buffer {
+    gint width, height;
+    const void *data = arv_buffer_get_data(buffer, NULL);
+    arv_buffer_get_image_region(buffer, NULL, NULL, &width, &height);
+    ArvPixelFormat pixel_format = arv_buffer_get_image_pixel_format(buffer);
+    
+    // Override pixel format if user has selected a specific one
+    if (![_preferredPixelFormat isEqualToString:@"Auto"]) {
+        ArvPixelFormat overrideFormat = pixel_format;
+        
+        if ([_preferredPixelFormat isEqualToString:@"Bayer GR8"]) {
+            overrideFormat = 0x01080008; // ARV_PIXEL_FORMAT_BAYER_GR_8
+        } else if ([_preferredPixelFormat isEqualToString:@"Bayer RG8"]) {
+            overrideFormat = 0x01080009; // ARV_PIXEL_FORMAT_BAYER_RG_8
+        } else if ([_preferredPixelFormat isEqualToString:@"Bayer GB8"]) {
+            overrideFormat = 0x0108000A; // ARV_PIXEL_FORMAT_BAYER_GB_8
+        } else if ([_preferredPixelFormat isEqualToString:@"Bayer BG8"]) {
+            overrideFormat = 0x0108000B; // ARV_PIXEL_FORMAT_BAYER_BG_8
+        } else if ([_preferredPixelFormat isEqualToString:@"Mono8"]) {
+            overrideFormat = 0x01080001; // ARV_PIXEL_FORMAT_MONO_8
+        } else if ([_preferredPixelFormat isEqualToString:@"RGB8"]) {
+            overrideFormat = 0x02180014; // ARV_PIXEL_FORMAT_RGB_8_PACKED
+        }
+        
+        if (overrideFormat != pixel_format) {
+            NSLog(@"AravisBridge: Overriding pixel format from 0x%x to 0x%x (%@)", 
+                  pixel_format, overrideFormat, _preferredPixelFormat);
+            pixel_format = overrideFormat;
+        }
+    }
+    
+    // Convert to CVPixelBuffer based on format
+    CVPixelBufferRef pixelBuffer = NULL;
+    
+    switch (pixel_format) {
+        case ARV_PIXEL_FORMAT_MONO_8:
+            [self createPixelBufferFromMono8:data width:width height:height pixelBuffer:&pixelBuffer];
+            break;
+            
+        case ARV_PIXEL_FORMAT_BAYER_GR_8:
+            NSLog(@"AravisBridge: Processing Bayer GR8 format image %dx%d", width, height);
+            [self createPixelBufferFromBayer:data width:width height:height pixelFormat:pixel_format pixelBuffer:&pixelBuffer];
+            break;
+        case ARV_PIXEL_FORMAT_BAYER_RG_8:
+            NSLog(@"AravisBridge: Processing Bayer RG8 format image %dx%d", width, height);
+            [self createPixelBufferFromBayer:data width:width height:height pixelFormat:pixel_format pixelBuffer:&pixelBuffer];
+            break;
+        case ARV_PIXEL_FORMAT_BAYER_GB_8:
+            NSLog(@"AravisBridge: Processing Bayer GB8 format image %dx%d", width, height);
+            [self createPixelBufferFromBayer:data width:width height:height pixelFormat:pixel_format pixelBuffer:&pixelBuffer];
+            break;
+        case ARV_PIXEL_FORMAT_BAYER_BG_8:
+            NSLog(@"AravisBridge: Processing Bayer BG8 format image %dx%d", width, height);
+            [self createPixelBufferFromBayer:data width:width height:height pixelFormat:pixel_format pixelBuffer:&pixelBuffer];
+            break;
+            
+        case ARV_PIXEL_FORMAT_RGB_8_PACKED:
+            [self createPixelBufferFromRGB:data width:width height:height pixelBuffer:&pixelBuffer];
+            break;
+            
+        case ARV_PIXEL_FORMAT_BGR_8_PACKED:
+            [self createPixelBufferFromBGR:data width:width height:height pixelBuffer:&pixelBuffer];
+            break;
+            
+        default:
+            NSLog(@"Unsupported pixel format: 0x%x (%s)", pixel_format, arv_pixel_format_to_gst_caps_string(pixel_format));
+            return;
+    }
+    
+    if (pixelBuffer && self.delegate) {
+        static int delegateCallCount = 0;
+        delegateCallCount++;
+        if (delegateCallCount % 30 == 1) {
+            NSLog(@"AravisBridge: Calling delegate with frame (call #%d)", delegateCallCount);
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate aravisBridge:self didReceiveFrame:pixelBuffer];
+            CVPixelBufferRelease(pixelBuffer);
+        });
+    } else {
+        if (pixelBuffer) {
+            NSLog(@"AravisBridge: Have pixelBuffer but no delegate!");
+            CVPixelBufferRelease(pixelBuffer);
+        } else {
+            NSLog(@"AravisBridge: Failed to create pixelBuffer");
+        }
+    }
+}
+
+- (void)createPixelBufferFromMono8:(const void *)data 
+                            width:(size_t)width 
+                           height:(size_t)height 
+                      pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
+    // Convert Mono8 to BGRA for display
+    CVPixelBufferCreate(kCFAllocatorDefault,
+                       width,
+                       height,
+                       kCVPixelFormatType_32BGRA,
+                       NULL,
+                       pixelBuffer);
+    
+    CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
+    void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(*pixelBuffer);
+    
+    const uint8_t *srcData = (const uint8_t *)data;
+    uint8_t *dstData = (uint8_t *)baseAddress;
+    
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            uint8_t gray = srcData[y * width + x];
+            size_t dstIdx = y * bytesPerRow + x * 4;
+            dstData[dstIdx + 0] = gray; // B
+            dstData[dstIdx + 1] = gray; // G
+            dstData[dstIdx + 2] = gray; // R
+            dstData[dstIdx + 3] = 255;  // A
+        }
+    }
+    
+    CVPixelBufferUnlockBaseAddress(*pixelBuffer, 0);
+}
+
+- (void)createPixelBufferFromBayer:(const void *)data 
+                             width:(size_t)width 
+                            height:(size_t)height
+                       pixelFormat:(ArvPixelFormat)bayerFormat
+                       pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
+    // Create BGRA buffer
+    CVPixelBufferCreate(kCFAllocatorDefault,
+                       width,
+                       height,
+                       kCVPixelFormatType_32BGRA,
+                       NULL,
+                       pixelBuffer);
+    
+    CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
+    void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(*pixelBuffer);
+    
+    const uint8_t *srcData = (const uint8_t *)data;
+    uint8_t *dstData = (uint8_t *)baseAddress;
+    
+    // Simple bilinear interpolation for Bayer pattern
+    // This is a basic implementation - for production use consider using
+    // more sophisticated algorithms or hardware debayering if available
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            size_t srcIdx = y * width + x;
+            size_t dstIdx = y * bytesPerRow + x * 4;
+            
+            uint8_t r = 0, g = 0, b = 0;
+            
+            // Determine the color of the current pixel based on Bayer pattern
+            // and interpolate missing colors from neighbors
+            BOOL isEvenRow = (y % 2 == 0);
+            BOOL isEvenCol = (x % 2 == 0);
+            
+            if (bayerFormat == ARV_PIXEL_FORMAT_BAYER_RG_8) {
+                if (isEvenRow && isEvenCol) {
+                    // Red pixel
+                    r = srcData[srcIdx];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                } else if (isEvenRow && !isEvenCol) {
+                    // Green pixel (red row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                } else if (!isEvenRow && isEvenCol) {
+                    // Green pixel (blue row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                } else {
+                    // Blue pixel
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = srcData[srcIdx];
+                }
+            }
+            else if (bayerFormat == ARV_PIXEL_FORMAT_BAYER_GR_8) {
+                // GR pattern - Green is top-left
+                if (isEvenRow && isEvenCol) {
+                    // Green pixel (red row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                } else if (isEvenRow && !isEvenCol) {
+                    // Red pixel
+                    r = srcData[srcIdx];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                } else if (!isEvenRow && isEvenCol) {
+                    // Blue pixel
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = srcData[srcIdx];
+                } else {
+                    // Green pixel (blue row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                }
+            }
+            else if (bayerFormat == ARV_PIXEL_FORMAT_BAYER_GB_8) {
+                // GB pattern - Green is top-left, Blue is top-right
+                if (isEvenRow && isEvenCol) {
+                    // Green pixel (blue row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                } else if (isEvenRow && !isEvenCol) {
+                    // Blue pixel
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = srcData[srcIdx];
+                } else if (!isEvenRow && isEvenCol) {
+                    // Red pixel
+                    r = srcData[srcIdx];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                } else {
+                    // Green pixel (red row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                }
+            }
+            else if (bayerFormat == ARV_PIXEL_FORMAT_BAYER_BG_8) {
+                // BG pattern - Blue is top-left
+                if (isEvenRow && isEvenCol) {
+                    // Blue pixel
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = srcData[srcIdx];
+                } else if (isEvenRow && !isEvenCol) {
+                    // Green pixel (blue row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                } else if (!isEvenRow && isEvenCol) {
+                    // Green pixel (red row)
+                    r = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:NO];
+                    g = srcData[srcIdx];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:YES];
+                } else {
+                    // Red pixel
+                    r = srcData[srcIdx];
+                    g = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:YES vertical:YES];
+                    b = [self averageNeighbors:srcData x:x y:y width:width height:height horizontal:NO vertical:NO];
+                }
+            }
+            else {
+                // Fallback to grayscale for unsupported patterns
+                NSLog(@"AravisBridge: Unsupported Bayer pattern 0x%x, using grayscale", bayerFormat);
+                r = g = b = srcData[srcIdx];
+            }
+            
+            dstData[dstIdx + 0] = b;     // B
+            dstData[dstIdx + 1] = g;     // G
+            dstData[dstIdx + 2] = r;     // R
+            dstData[dstIdx + 3] = 255;   // A
+        }
+    }
+    
+    CVPixelBufferUnlockBaseAddress(*pixelBuffer, 0);
+}
+
+- (uint8_t)averageNeighbors:(const uint8_t *)data 
+                          x:(size_t)x 
+                          y:(size_t)y 
+                      width:(size_t)width 
+                     height:(size_t)height
+                 horizontal:(BOOL)horizontal
+                   vertical:(BOOL)vertical {
+    int sum = 0;
+    int count = 0;
+    
+    if (horizontal) {
+        if (x > 0) {
+            sum += data[y * width + (x - 1)];
+            count++;
+        }
+        if (x < width - 1) {
+            sum += data[y * width + (x + 1)];
+            count++;
+        }
+    }
+    
+    if (vertical) {
+        if (y > 0) {
+            sum += data[(y - 1) * width + x];
+            count++;
+        }
+        if (y < height - 1) {
+            sum += data[(y + 1) * width + x];
+            count++;
+        }
+    }
+    
+    if (!horizontal && !vertical) {
+        // Diagonal neighbors
+        if (x > 0 && y > 0) {
+            sum += data[(y - 1) * width + (x - 1)];
+            count++;
+        }
+        if (x < width - 1 && y > 0) {
+            sum += data[(y - 1) * width + (x + 1)];
+            count++;
+        }
+        if (x > 0 && y < height - 1) {
+            sum += data[(y + 1) * width + (x - 1)];
+            count++;
+        }
+        if (x < width - 1 && y < height - 1) {
+            sum += data[(y + 1) * width + (x + 1)];
+            count++;
+        }
+    }
+    
+    return count > 0 ? (uint8_t)(sum / count) : 0;
+}
+
+- (void)createPixelBufferFromRGB:(const void *)data 
+                           width:(size_t)width 
+                          height:(size_t)height 
+                     pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
+    // Convert RGB to BGRA
+    CVPixelBufferCreate(kCFAllocatorDefault,
+                       width,
+                       height,
+                       kCVPixelFormatType_32BGRA,
+                       NULL,
+                       pixelBuffer);
+    
+    CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
+    void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(*pixelBuffer);
+    
+    const uint8_t *srcData = (const uint8_t *)data;
+    uint8_t *dstData = (uint8_t *)baseAddress;
+    
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            size_t srcIdx = y * width * 3 + x * 3;
+            size_t dstIdx = y * bytesPerRow + x * 4;
+            
+            dstData[dstIdx + 0] = srcData[srcIdx + 2]; // B
+            dstData[dstIdx + 1] = srcData[srcIdx + 1]; // G
+            dstData[dstIdx + 2] = srcData[srcIdx + 0]; // R
+            dstData[dstIdx + 3] = 255;                 // A
+        }
+    }
+    
+    CVPixelBufferUnlockBaseAddress(*pixelBuffer, 0);
+}
+
+- (void)createPixelBufferFromBGR:(const void *)data 
+                           width:(size_t)width 
+                          height:(size_t)height 
+                     pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
+    // Convert BGR to BGRA
+    CVPixelBufferCreate(kCFAllocatorDefault,
+                       width,
+                       height,
+                       kCVPixelFormatType_32BGRA,
+                       NULL,
+                       pixelBuffer);
+    
+    CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
+    void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(*pixelBuffer);
+    
+    const uint8_t *srcData = (const uint8_t *)data;
+    uint8_t *dstData = (uint8_t *)baseAddress;
+    
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            size_t srcIdx = y * width * 3 + x * 3;
+            size_t dstIdx = y * bytesPerRow + x * 4;
+            
+            dstData[dstIdx + 0] = srcData[srcIdx + 0]; // B
+            dstData[dstIdx + 1] = srcData[srcIdx + 1]; // G
+            dstData[dstIdx + 2] = srcData[srcIdx + 2]; // R
+            dstData[dstIdx + 3] = 255;                 // A
+        }
+    }
+    
+    CVPixelBufferUnlockBaseAddress(*pixelBuffer, 0);
+}
+
+#pragma mark - Camera Settings
+
+- (BOOL)setFrameRate:(double)frameRate {
+    if (!_camera) return NO;
+    
+    GError *error = NULL;
+    arv_camera_set_frame_rate(_camera, frameRate, &error);
+    
+    if (error) {
+        g_error_free(error);
+        return NO;
+    }
+    return YES;
+}
+
+- (BOOL)setExposureTime:(double)exposureTimeUs {
+    if (!_camera) return NO;
+    
+    GError *error = NULL;
+    arv_camera_set_exposure_time(_camera, exposureTimeUs, &error);
+    
+    if (error) {
+        g_error_free(error);
+        return NO;
+    }
+    return YES;
+}
+
+- (BOOL)setGain:(double)gain {
+    if (!_camera) return NO;
+    
+    GError *error = NULL;
+    arv_camera_set_gain(_camera, gain, &error);
+    
+    if (error) {
+        g_error_free(error);
+        return NO;
+    }
+    return YES;
+}
+
+- (double)frameRate {
+    if (!_camera) return 0;
+    return arv_camera_get_frame_rate(_camera, NULL);
+}
+
+- (double)exposureTime {
+    if (!_camera) return 0;
+    return arv_camera_get_exposure_time(_camera, NULL);
+}
+
+- (double)gain {
+    if (!_camera) return 0;
+    return arv_camera_get_gain(_camera, NULL);
+}
+
+- (void)setPreferredPixelFormat:(NSString *)format {
+    @synchronized(self) {
+        _preferredPixelFormat = format ?: @"Auto";
+        NSLog(@"AravisBridge: Preferred pixel format set to: %@", _preferredPixelFormat);
+    }
+}
+
+#pragma mark - Private
+
+- (void)setState:(AravisCameraState)state {
+    _state = state;
+    if (self.delegate) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate aravisBridge:self didChangeState:state];
+        });
+    }
+}
+
+- (void)handleError:(GError *)error message:(NSString *)message {
+    NSString *errorMessage = error ? [NSString stringWithUTF8String:error->message] : @"Unknown error";
+    NSError *nsError = [NSError errorWithDomain:@"AravisBridge" 
+                                           code:error ? error->code : -1
+                                       userInfo:@{NSLocalizedDescriptionKey: message,
+                                                NSLocalizedFailureReasonErrorKey: errorMessage}];
+    
+    [self setState:AravisCameraStateError];
+    
+    if (self.delegate) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate aravisBridge:self didEncounterError:nsError];
+        });
+    }
+}
+
+@end

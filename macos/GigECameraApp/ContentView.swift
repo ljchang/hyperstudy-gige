@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var cameraManager: CameraManager
-    @State private var isHoveringInstall = false
+    @State private var previewImage: NSImage?
     
     var body: some View {
         ZStack {
@@ -20,6 +20,32 @@ struct ContentView: View {
                 // Header with camera icon
                 HeaderView(isConnected: cameraManager.isConnected)
                     .padding(.top, DesignSystem.Spacing.xLarge)
+                
+                // Camera selection section
+                if !cameraManager.availableCameras.isEmpty {
+                    VStack(spacing: DesignSystem.Spacing.small) {
+                        HStack {
+                            Image(systemName: "camera.on.rectangle")
+                                .font(DesignSystem.Typography.callout)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                            Text("Select Camera")
+                                .font(DesignSystem.Typography.callout)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                            Spacer()
+                        }
+                        
+                        Picker("", selection: $cameraManager.selectedCameraId) {
+                            Text("None").tag(nil as String?)
+                            ForEach(cameraManager.availableCameras, id: \.deviceId) { camera in
+                                Text("\(camera.name) (\(camera.ipAddress))")
+                                    .tag(camera.deviceId as String?)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .labelsHidden()
+                    }
+                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                }
                 
                 // Status section
                 VStack(spacing: DesignSystem.Spacing.medium) {
@@ -42,55 +68,89 @@ struct ContentView: View {
                             title: "Format",
                             value: cameraManager.currentFormat
                         )
+                        
+                        // Pixel format selector
+                        HStack {
+                            Label("Pixel Format", systemImage: "square.grid.3x3.fill")
+                                .font(DesignSystem.Typography.callout)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                            
+                            Spacer()
+                            
+                            Picker("", selection: $cameraManager.currentPixelFormat) {
+                                ForEach(cameraManager.availablePixelFormats, id: \.self) { format in
+                                    Text(format).tag(format)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 120)
+                        }
+                        
+                        // Preview toggle button
+                        Button(action: {
+                            cameraManager.togglePreview()
+                        }) {
+                            HStack {
+                                Image(systemName: cameraManager.isShowingPreview ? "eye.slash.fill" : "eye.fill")
+                                Text(cameraManager.isShowingPreview ? "Hide Preview" : "Show Preview")
+                            }
+                            .font(DesignSystem.Typography.callout)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, DesignSystem.Spacing.medium)
+                            .padding(.vertical, DesignSystem.Spacing.small)
+                            .background(DesignSystem.Colors.statusGreen)
+                            .cornerRadius(DesignSystem.CornerRadius.medium)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.top, DesignSystem.Spacing.small)
+                        
+                        // Embedded preview
+                        if cameraManager.isShowingPreview {
+                            VStack(spacing: 0) {
+                                // Add a border to see if the view is there
+                                Rectangle()
+                                    .fill(Color.blue)
+                                    .frame(height: 2)
+                                
+                                CameraPreviewSection(previewImage: $previewImage)
+                                    .environmentObject(cameraManager)
+                                    .frame(minHeight: 240)
+                                    .background(Color.red.opacity(0.1)) // Debug background
+                                
+                                Rectangle()
+                                    .fill(Color.blue)
+                                    .frame(height: 2)
+                            }
+                            .padding(.top, DesignSystem.Spacing.medium)
+                            .transition(.opacity)
+                            .animation(.easeInOut, value: cameraManager.isShowingPreview)
+                        }
                     }
                 }
                 .padding(.horizontal, DesignSystem.Spacing.xLarge)
                 
-                Divider()
-                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
-                
-                // Extension control
-                ExtensionControlSection(
-                    isInstalled: cameraManager.isExtensionInstalled,
-                    isInstalling: cameraManager.isInstalling,
-                    onInstall: {
-                        Task {
-                            #if DEBUG
-                            // Check if running from Xcode
-                            if Bundle.main.bundlePath.contains("DerivedData") {
-                                // Show alert about test mode
-                                let alert = NSAlert()
-                                alert.messageText = "Running in Test Mode"
-                                alert.informativeText = "System extensions cannot be installed when running from Xcode.\n\nSimulating successful installation for UI testing."
-                                alert.addButton(withTitle: "OK")
-                                alert.runModal()
-                                
-                                // Simulate installation
-                                cameraManager.isExtensionInstalled = true
-                                cameraManager.isConnected = true
-                                cameraManager.cameraModel = "MRC MR-CAM-HR (Test Mode)"
-                            } else {
-                                await cameraManager.installExtension()
-                            }
-                            #else
-                            await cameraManager.installExtension()
-                            #endif
-                        }
-                    },
-                    onUninstall: {
-                        Task {
-                            await cameraManager.uninstallExtension()
-                        }
-                    }
-                )
-                .padding(.horizontal, DesignSystem.Spacing.xLarge)
-                
                 Spacer()
                 
-                // Compatibility info
-                CompatibilityInfoView()
-                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
-                    .padding(.bottom, DesignSystem.Spacing.large)
+                // Extension status or installation info
+                if !cameraManager.isExtensionInstalled {
+                    VStack(spacing: DesignSystem.Spacing.small) {
+                        if cameraManager.isInstalling {
+                            HStack {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                                Text("Installing camera extension...")
+                                    .font(DesignSystem.Typography.callout)
+                            }
+                        } else {
+                            Text("Camera extension activation required")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                        }
+                    }
+                    .padding()
+                }
+                
             }
         }
     }
@@ -149,84 +209,6 @@ struct StatusRow: View {
     }
 }
 
-// MARK: - Extension Control Section
-
-struct ExtensionControlSection: View {
-    let isInstalled: Bool
-    let isInstalling: Bool
-    let onInstall: () -> Void
-    let onUninstall: () -> Void
-    
-    @State private var isHovering = false
-    
-    var body: some View {
-        VStack(spacing: DesignSystem.Spacing.small) {
-            if isInstalled {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(DesignSystem.Colors.statusGreen)
-                    Text("Extension Installed")
-                        .font(DesignSystem.Typography.callout)
-                }
-                
-                Button(action: onUninstall) {
-                    Text("Uninstall Extension")
-                        .font(DesignSystem.Typography.callout)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, 4)
-            } else {
-                Button(action: onInstall) {
-                    HStack {
-                        if isInstalling {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "arrow.down.circle")
-                        }
-                        Text(isInstalling ? "Installing..." : "Install Extension")
-                    }
-                    .font(DesignSystem.Typography.headline)
-                    .padding(.horizontal, DesignSystem.Spacing.large)
-                    .padding(.vertical, DesignSystem.Spacing.small)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(isInstalling)
-                .scaleEffect(isHovering ? 1.05 : 1.0)
-                .onHover { hovering in
-                    withAnimation(DesignSystem.Animation.fast) {
-                        isHovering = hovering
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Compatibility Info View
-
-struct CompatibilityInfoView: View {
-    var body: some View {
-        VStack(spacing: DesignSystem.Spacing.xSmall) {
-            Text("Compatible with:")
-                .font(DesignSystem.Typography.caption)
-                .foregroundColor(DesignSystem.Colors.textSecondary)
-            
-            HStack(spacing: DesignSystem.Spacing.small) {
-                ForEach(["Zoom", "Teams", "OBS", "QuickTime"], id: \.self) { app in
-                    Text(app)
-                        .font(DesignSystem.Typography.footnote)
-                        .padding(.horizontal, DesignSystem.Spacing.xSmall)
-                        .padding(.vertical, 2)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(DesignSystem.CornerRadius.small)
-                }
-            }
-        }
-    }
-}
 
 // MARK: - Visual Effect Background
 
@@ -242,17 +224,113 @@ struct VisualEffectBackground: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-// MARK: - Button Styles
+// MARK: - Camera Preview Section
 
-struct PrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundColor(.white)
-            .padding(.horizontal, DesignSystem.Spacing.large)
-            .padding(.vertical, DesignSystem.Spacing.small)
-            .background(Color.accentColor)
-            .cornerRadius(DesignSystem.CornerRadius.medium)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+struct CameraPreviewSection: View {
+    @Binding var previewImage: NSImage?
+    @EnvironmentObject var cameraManager: CameraManager
+    @StateObject private var frameHandler = PreviewFrameHandler()
+    @State private var hasAppeared = false
+    
+    var body: some View {
+        ZStack {
+            // Always show a background so we can see if the view exists
+            Rectangle()
+                .fill(Color.black)
+                .frame(height: 240)
+                .cornerRadius(DesignSystem.CornerRadius.medium)
+            
+            if let image = frameHandler.currentImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 240)
+                    .cornerRadius(DesignSystem.CornerRadius.medium)
+            } else {
+                VStack {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.2)
+                    Text("Waiting for camera feed...")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundColor(.white)
+                        .padding(.top, DesignSystem.Spacing.small)
+                    Text("View is mounted: \(hasAppeared ? "Yes" : "No")")
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundColor(.yellow)
+                }
+            }
+        }
+        .onAppear {
+            print("CameraPreviewSection: ===== VIEW APPEARED =====")
+            hasAppeared = true
+            // Delay to ensure view is stable
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                frameHandler.startReceivingFrames()
+            }
+        }
+        .onDisappear {
+            print("CameraPreviewSection: ===== VIEW DISAPPEARED =====")
+            hasAppeared = false
+            frameHandler.stopReceivingFrames()
+        }
+    }
+}
+
+// MARK: - Preview Frame Handler
+
+class PreviewFrameHandler: ObservableObject {
+    @Published var currentImage: NSImage?
+    private let gigEManager = GigECameraManager.shared
+    private var frameCount = 0
+    
+    
+    func startReceivingFrames() {
+        print("PreviewFrameHandler: Starting to receive frames")
+        
+        
+        // Start streaming if not already
+        if !gigEManager.isStreaming {
+            print("PreviewFrameHandler: Starting streaming...")
+            gigEManager.startStreaming()
+        } else {
+            print("PreviewFrameHandler: Already streaming")
+        }
+        
+        // Add frame handler with simpler conversion
+        gigEManager.addFrameHandler { [weak self] pixelBuffer in
+            guard let self = self else { return }
+            
+            self.frameCount += 1
+            
+            // Only log every 30th frame
+            if self.frameCount % 30 == 1 {
+                print("PreviewFrameHandler: Got frame #\(self.frameCount)")
+            }
+            
+            // Simple CIImage to NSImage conversion
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let rep = NSCIImageRep(ciImage: ciImage)
+            let nsImage = NSImage(size: rep.size)
+            nsImage.addRepresentation(rep)
+            
+            // Update on main thread
+            DispatchQueue.main.async {
+                self.currentImage = nsImage
+                if self.frameCount % 30 == 1 {
+                    print("PreviewFrameHandler: Updated UI with frame #\(self.frameCount)")
+                }
+            }
+        }
+        
+        print("PreviewFrameHandler: Frame handler added")
+    }
+    
+    func stopReceivingFrames() {
+        print("PreviewFrameHandler: Stopping frame reception after \(frameCount) frames")
+        gigEManager.stopStreaming()
+        gigEManager.removeAllFrameHandlers()
+        frameCount = 0
     }
 }
 
@@ -262,6 +340,6 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(CameraManager.shared)
-            .frame(width: 400, height: 500)
+            .frame(width: 400, height: 740)
     }
 }

@@ -13,7 +13,7 @@
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
-    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <string>SYSX</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
@@ -27,12 +27,9 @@
         <key>CMIOExtensionCategory</key>
         <string>VideoDevice</string>
     </dict>
-    <key>NSExtension</key>
-    <dict>
-        <key>NSExtensionPointIdentifier</key>
-        <string>com.apple.cmio-camera-extension</string>
-    </dict>
     <key>NSCameraUsageDescription</key>
     <string>GigE Virtual Camera needs camera access to provide virtual camera functionality</string>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>GigE Virtual Camera provides a virtual camera for GigE Vision cameras</string>
 </dict>
 </plist>

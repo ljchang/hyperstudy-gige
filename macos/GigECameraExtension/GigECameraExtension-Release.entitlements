@@ -8,11 +8,5 @@
     <array>
         <string>group.com.lukechang.gigecamera</string>
     </array>
-    <key>com.apple.security.device.camera</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.get-task-allow</key>
-    <false/>
 </dict>
 </plist>

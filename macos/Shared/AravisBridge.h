@@ -60,6 +60,7 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 - (BOOL)setFrameRate:(double)frameRate;
 - (BOOL)setExposureTime:(double)exposureTimeUs;
 - (BOOL)setGain:(double)gain;
+- (void)setPreferredPixelFormat:(NSString *)format;
 
 // Get current settings
 - (double)frameRate;

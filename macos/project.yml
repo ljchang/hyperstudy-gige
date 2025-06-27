@@ -7,7 +7,8 @@ options:
   
 settings:
   DEVELOPMENT_TEAM: S368GH6KF7
-  CODE_SIGN_STYLE: Automatic
+  CODE_SIGN_STYLE: Manual
+  CODE_SIGN_IDENTITY: "Apple Development"
   # Aravis settings
   HEADER_SEARCH_PATHS: 
     - /opt/homebrew/include
@@ -56,6 +57,7 @@ targets:
       CURRENT_PROJECT_VERSION: 1
       SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
       OTHER_LDFLAGS: $(inherited)
+      PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
     preBuildScripts:
       - script: |
           if [ -d "${SRCROOT}/Scripts" ]; then
@@ -93,3 +95,4 @@ targets:
       CURRENT_PROJECT_VERSION: 1
       SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
       OTHER_LDFLAGS: $(inherited)
+      PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"

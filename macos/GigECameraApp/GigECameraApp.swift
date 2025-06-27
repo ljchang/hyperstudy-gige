@@ -16,17 +16,37 @@ struct GigECameraApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(cameraManager)
-                .frame(width: 400, height: 500)
-                .fixedSize()
+                .frame(width: 400, height: cameraManager.isShowingPreview ? 720 : 440)
+                .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
                 .onAppear {
-                    // Disable window resizing
-                    if let window = NSApplication.shared.windows.first {
-                        window.styleMask.remove(.resizable)
-                        window.title = "GigE Virtual Camera"
+                    // Configure window
+                    DispatchQueue.main.async {
+                        if let window = NSApplication.shared.windows.first {
+                            window.setContentSize(NSSize(width: 400, height: 440))
+                            window.minSize = NSSize(width: 400, height: 440)
+                            window.maxSize = NSSize(width: 600, height: 800)
+                            window.styleMask.insert(.resizable)
+                            window.center()
+                        }
+                    }
+                }
+                .onChange(of: cameraManager.isShowingPreview) { isShowing in
+                    // Animate window resize when preview toggles
+                    DispatchQueue.main.async {
+                        if let window = NSApplication.shared.windows.first {
+                            let newHeight: CGFloat = isShowing ? 720 : 440
+                            let currentFrame = window.frame
+                            let newFrame = NSRect(
+                                x: currentFrame.origin.x,
+                                y: currentFrame.origin.y + currentFrame.height - newHeight,
+                                width: 400,
+                                height: newHeight
+                            )
+                            window.setFrame(newFrame, display: true, animate: true)
+                        }
                     }
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         
         // Menu bar commands
         .commands {
@@ -55,5 +75,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        // Clean up preview if open
+        CameraManager.shared.hidePreview()
     }
 }

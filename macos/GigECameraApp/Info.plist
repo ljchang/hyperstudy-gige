@@ -32,5 +32,7 @@
     <string>GigE Virtual Camera provides a virtual camera for use in other applications</string>
     <key>NSCameraUseContinuityCameraDeviceType</key>
     <true/>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>GigE Virtual Camera installs a camera extension to provide virtual camera functionality to other applications.</string>
 </dict>
 </plist>

@@ -1,4 +1,0 @@
-Target dependency graph (2 targets)
-Target 'GigEVirtualCamera' in project 'GigEVirtualCamera'
-➜ Explicit dependency on target 'GigECameraExtension' in project 'GigEVirtualCamera'
-Target 'GigECameraExtension' in project 'GigEVirtualCamera' (no dependencies)

@@ -21,9 +21,13 @@ class GigECameraManager: NSObject, ObservableObject {
     @Published var currentCamera: AravisCamera?
     @Published var frameRate: Double = 30.0
     @Published var lastError: Error?
+    @Published var preferredPixelFormat: String = "Auto"
     
     private let aravisBridge = AravisBridge()
     private var frameHandlers: [(CVPixelBuffer) -> Void] = []
+    private var lastDiscoveryTime = Date.distantPast
+    private var connectionRetryCount = 0
+    private var frameDistributionCount = 0
     
     override init() {
         super.init()
@@ -34,13 +38,22 @@ class GigECameraManager: NSObject, ObservableObject {
     // MARK: - Camera Discovery
     
     func discoverCameras() {
+        print("GigECameraManager: Starting camera discovery...")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let cameras = AravisBridge.discoverCameras()
+            print("GigECameraManager: Found \(cameras.count) cameras")
+            for camera in cameras {
+                print("  - \(camera.name) at \(camera.ipAddress)")
+            }
             DispatchQueue.main.async {
                 self?.availableCameras = cameras
                 
+                // Post notification about discovered cameras
+                NotificationCenter.default.post(name: NSNotification.Name("GigECamerasDiscovered"), object: nil)
+                
                 // Auto-connect to first camera if available
                 if let firstCamera = cameras.first, self?.currentCamera == nil {
+                    print("GigECameraManager: Auto-connecting to \(firstCamera.name)")
                     self?.connect(to: firstCamera)
                 }
             }
@@ -70,9 +83,17 @@ class GigECameraManager: NSObject, ObservableObject {
     // MARK: - Streaming
     
     func startStreaming() {
-        guard aravisBridge.startStreaming() else {
+        print("GigECameraManager: startStreaming called, isConnected=\(isConnected)")
+        guard isConnected else {
+            print("GigECameraManager: Cannot start streaming - not connected")
             return
         }
+        
+        guard aravisBridge.startStreaming() else {
+            print("GigECameraManager: aravisBridge.startStreaming() failed")
+            return
+        }
+        print("GigECameraManager: Streaming started successfully")
     }
     
     func stopStreaming() {
@@ -104,6 +125,12 @@ class GigECameraManager: NSObject, ObservableObject {
     func setGain(_ gain: Double) {
         _ = aravisBridge.setGain(gain)
     }
+    
+    func setPixelFormat(_ format: String) {
+        preferredPixelFormat = format
+        // Notify the bridge about format preference
+        aravisBridge.setPreferredPixelFormat(format)
+    }
 }
 
 // MARK: - AravisBridgeDelegate
@@ -111,8 +138,17 @@ class GigECameraManager: NSObject, ObservableObject {
 extension GigECameraManager: AravisBridgeDelegate {
     func aravisBridge(_ bridge: Any, didReceiveFrame pixelBuffer: CVPixelBuffer) {
         // Notify all frame handlers
-        for handler in frameHandlers {
-            handler(pixelBuffer)
+        if frameHandlers.isEmpty {
+            print("GigECameraManager: Received frame but no handlers registered")
+        } else {
+            // Only log every 30th frame to avoid spam
+            frameDistributionCount += 1
+            if frameDistributionCount % 30 == 1 {
+                print("GigECameraManager: Distributing frame #\(frameDistributionCount) to \(frameHandlers.count) handlers")
+            }
+            for handler in frameHandlers {
+                handler(pixelBuffer)
+            }
         }
     }
     
@@ -134,6 +170,9 @@ extension GigECameraManager: AravisBridgeDelegate {
             default:
                 break
             }
+            
+            // Post state change notification
+            NotificationCenter.default.post(name: NSNotification.Name("GigECameraStateChanged"), object: nil)
         }
     }
     

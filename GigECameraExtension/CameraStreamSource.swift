@@ -36,7 +36,10 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
     private var useTestPattern = true
     
     // MARK: - Initialization
-    init(localizedName: String, direction: CMIOExtensionStream.Direction = .source) {
+    init(localizedName: String, 
+         direction: CMIOExtensionStream.Direction = .source,
+         deviceID: UUID,
+         frameQueue: CMSimpleQueue? = nil) {
         // Create supported formats
         var formatList: [CMIOExtensionStreamFormat] = []
         
@@ -49,23 +52,30 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         }
         
         self._formats = formatList
+        self.frameQueue = frameQueue
         
         super.init()
         
-        // Create stream
-        let streamID = UUID()
+        // Create stream with a persistent ID based on device ID and direction
+        let streamID = UUID(uuidString: "\(deviceID.uuidString)-\(direction == .source ? "source" : "sink")") ?? UUID()
         stream = CMIOExtensionStream(localizedName: localizedName,
                                      streamID: streamID,
                                      direction: direction,
                                      clockType: .hostTime,
                                      source: self)
         
-        logger.info("Created \(direction == .source ? "source" : "sink") stream: \(localizedName)")
+        logger.info("Created \(direction == .source ? "source" : "sink") stream: \(localizedName) with ID: \(streamID.uuidString)")
+        
+        // If we have a shared queue, log it
+        if frameQueue != nil {
+            logger.info("Stream configured with shared frame queue")
+        }
     }
     
     // MARK: - Format Creation
     private static func createFormat(width: Int, height: Int, frameRate: Int) -> CMIOExtensionStreamFormat? {
-        let pixelFormat = kCVPixelFormatType_422YpCbCr8
+        // Use 32BGRA as it's widely supported
+        let pixelFormat = kCVPixelFormatType_32BGRA
         
         var formatDescription: CMFormatDescription?
         let status = CMVideoFormatDescriptionCreate(

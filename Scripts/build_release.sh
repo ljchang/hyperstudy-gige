@@ -8,22 +8,22 @@ echo "=== Building GigE Virtual Camera Release ==="
 
 # 1. Clean and generate project
 echo "1. Cleaning and generating project..."
-cd /Users/lukechang/Github/hyperstudy-gige/macos
+cd /Users/lukechang/Github/hyperstudy-gige
 xcodegen generate
 
 # 2. Clean build folder
 echo -e "\n2. Cleaning build folder..."
-xcodebuild -project GigEVirtualCamera.xcodeproj -scheme GigEVirtualCamera clean
+xcodebuild -project GigEVirtualCamera.xcodeproj -target GigEVirtualCamera clean
 
 # 3. Build Release configuration
 echo -e "\n3. Building Release configuration..."
 xcodebuild -project GigEVirtualCamera.xcodeproj \
-           -scheme GigEVirtualCamera \
+           -target GigEVirtualCamera \
            -configuration Release \
            build \
-           CODE_SIGN_IDENTITY="Apple Development" \
+           CODE_SIGN_IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)" \
            DEVELOPMENT_TEAM="S368GH6KF7" \
-           CODE_SIGN_STYLE="Automatic" \
+           CODE_SIGN_STYLE="Manual" \
            PRODUCT_BUNDLE_IDENTIFIER="com.lukechang.GigEVirtualCamera"
 
 # 4. Find the built app
@@ -38,7 +38,7 @@ echo -e "\n4. Release app built at: $RELEASE_APP"
 
 # 5. Sign all components properly
 echo -e "\n5. Signing all components..."
-/Users/lukechang/Github/hyperstudy-gige/macos/Scripts/prepare_for_distribution.sh "$RELEASE_APP"
+/Users/lukechang/Github/hyperstudy-gige/Scripts/prepare_for_distribution.sh "$RELEASE_APP"
 
 # 6. Copy to Applications
 echo -e "\n6. Installing to /Applications..."

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,16 +12,18 @@
 		38C22790775F164D92C31F38 /* CameraDeviceSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3E57029895AF9F5F03979A /* CameraDeviceSource.swift */; };
 		3E0A485A4AAEC44F532CFA33 /* CameraConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDCF56FEE60EEC8CE62D5B3 /* CameraConstants.swift */; };
 		3F2DC1D479702F370D765D2E /* CameraStreamSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6899B7E7855BF13C99266216 /* CameraStreamSource.swift */; };
-		4B8E2F0345678901BCDEF234 /* CMIOFrameSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F9D1234567890ABCDEF01 /* CMIOFrameSender.swift */; };
+		4208CFDDA213D4814862BA5B /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B13E11AD4F64865C4BD3C5 /* DesignSystem.swift */; };
+		5167D3DB450F7851540C99AD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B5293ECB1444D7DF3843CA6 /* Assets.xcassets */; };
 		56F45446257DB667908E2553 /* GigECameraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19F5AC376905E28D984426A /* GigECameraApp.swift */; };
+		58234392A0F970AB65519181 /* GigECameraExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8CF1111B0EB36BA18E3A6FEA /* GigECameraExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		5CF8213FB1E982EA0F76EA25 /* CameraConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDCF56FEE60EEC8CE62D5B3 /* CameraConstants.swift */; };
-		6D0A9F3567890123DEF45678 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9F8E2456789012CDEF3456 /* CameraPreviewView.swift */; };
+		78A8516529854A979EA71BDB /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15570879E141C8029D5D2E9 /* CameraPreviewView.swift */; };
 		7E18D4CF4225ACE7D6AFCDD6 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FD2C669B7A56824431CBD2 /* main.swift */; };
 		7FBA8050AB7022DE5D99B41A /* GigECameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5498F5AFDED38343B6801C8 /* GigECameraManager.swift */; };
 		91AC552492FCCD5F93B1787C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B0B794181488800BEAEB3A /* ContentView.swift */; };
 		C3245C66397FF46C0F9966DE /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B13E11AD4F64865C4BD3C5 /* DesignSystem.swift */; };
+		D3A632A863EE95A66CD83039 /* CMIOFrameSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D9C615FB22B5ADC5572BA6 /* CMIOFrameSender.swift */; };
 		DF218341570648066EE4D859 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08987548898558EC7975B0D2 /* CameraManager.swift */; };
-		E35DC7AF2E106C0B000F951A /* GigECameraExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = 8CF1111B0EB36BA18E3A6FEA /* GigECameraExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,15 +37,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		E35DC7AE2E106BEE000F951A /* Copy Files */ = {
+		A58789CBC5458D390FEB59CA /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				E35DC7AF2E106C0B000F951A /* GigECameraExtension.appex in Copy Files */,
+				58234392A0F970AB65519181 /* GigECameraExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Copy Files";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -51,23 +53,27 @@
 /* Begin PBXFileReference section */
 		07A5A63BAD5298B73D9B47D8 /* GigEVirtualCamera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GigEVirtualCamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		08987548898558EC7975B0D2 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
+		22F86B55384BEC9562E1B1C0 /* GigECameraExtension-Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GigECameraExtension-Debug.entitlements"; sourceTree = "<group>"; };
 		25B0B794181488800BEAEB3A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		3A7F9D1234567890ABCDEF01 /* CMIOFrameSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CMIOFrameSender.swift; sourceTree = "<group>"; };
+		3B5293ECB1444D7DF3843CA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		40FC5A0491E3899B77B1D331 /* GigECameraExtension-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GigECameraExtension-Release.entitlements"; sourceTree = "<group>"; };
 		41F0F6B8BB6D5145B21D6BFC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		43D9C615FB22B5ADC5572BA6 /* CMIOFrameSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CMIOFrameSender.swift; sourceTree = "<group>"; };
 		5674B0FC765DBF41227A079F /* AravisBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AravisBridge.mm; sourceTree = "<group>"; };
 		5B545C2BFB14C5554212441D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		5C9F8E2456789012CDEF3456 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		6899B7E7855BF13C99266216 /* CameraStreamSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraStreamSource.swift; sourceTree = "<group>"; };
 		72B13E11AD4F64865C4BD3C5 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		7768F67812F46E595F8F341F /* AravisBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AravisBridge.h; sourceTree = "<group>"; };
 		8CF1111B0EB36BA18E3A6FEA /* GigECameraExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GigECameraExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		935878317D9F55B6DE23BDD5 /* GigECameraExtension-Dev.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GigECameraExtension-Dev.entitlements"; sourceTree = "<group>"; };
+		9477A35A51A416185BC0A615 /* GigECamera-Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GigECamera-Debug.entitlements"; sourceTree = "<group>"; };
 		A19F5AC376905E28D984426A /* GigECameraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GigECameraApp.swift; sourceTree = "<group>"; };
+		B15570879E141C8029D5D2E9 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		B1FD2C669B7A56824431CBD2 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		B9D3B1C10327A504D959DA68 /* CameraProviderSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraProviderSource.swift; sourceTree = "<group>"; };
 		CF3E57029895AF9F5F03979A /* CameraDeviceSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraDeviceSource.swift; sourceTree = "<group>"; };
+		CF57E68AAC8B26D08650A0DF /* GigECamera-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GigECamera-Release.entitlements"; sourceTree = "<group>"; };
 		DDDCF56FEE60EEC8CE62D5B3 /* CameraConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraConstants.swift; sourceTree = "<group>"; };
-		E331A8922E0E44E6000CF37F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E3CEEF7CF0CF1835666C90C5 /* GigEVirtualCamera-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GigEVirtualCamera-Bridging-Header.h"; sourceTree = "<group>"; };
 		F0F0CDEE2ACE54DF0EEA39AD /* GigECameraExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GigECameraExtension.entitlements; sourceTree = "<group>"; };
 		F5498F5AFDED38343B6801C8 /* GigECameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GigECameraManager.swift; sourceTree = "<group>"; };
@@ -78,11 +84,13 @@
 		2A3E3371242882E8ADD87C08 /* GigECameraApp */ = {
 			isa = PBXGroup;
 			children = (
-				E331A8922E0E44E6000CF37F /* Assets.xcassets */,
+				3B5293ECB1444D7DF3843CA6 /* Assets.xcassets */,
 				08987548898558EC7975B0D2 /* CameraManager.swift */,
-				3A7F9D1234567890ABCDEF01 /* CMIOFrameSender.swift */,
-				5C9F8E2456789012CDEF3456 /* CameraPreviewView.swift */,
+				B15570879E141C8029D5D2E9 /* CameraPreviewView.swift */,
+				43D9C615FB22B5ADC5572BA6 /* CMIOFrameSender.swift */,
 				25B0B794181488800BEAEB3A /* ContentView.swift */,
+				9477A35A51A416185BC0A615 /* GigECamera-Debug.entitlements */,
+				CF57E68AAC8B26D08650A0DF /* GigECamera-Release.entitlements */,
 				FE1E7B53D0144A617847482B /* GigECamera.entitlements */,
 				A19F5AC376905E28D984426A /* GigECameraApp.swift */,
 				5B545C2BFB14C5554212441D /* Info.plist */,
@@ -115,7 +123,9 @@
 				CF3E57029895AF9F5F03979A /* CameraDeviceSource.swift */,
 				B9D3B1C10327A504D959DA68 /* CameraProviderSource.swift */,
 				6899B7E7855BF13C99266216 /* CameraStreamSource.swift */,
+				22F86B55384BEC9562E1B1C0 /* GigECameraExtension-Debug.entitlements */,
 				935878317D9F55B6DE23BDD5 /* GigECameraExtension-Dev.entitlements */,
+				40FC5A0491E3899B77B1D331 /* GigECameraExtension-Release.entitlements */,
 				F0F0CDEE2ACE54DF0EEA39AD /* GigECameraExtension.entitlements */,
 				41F0F6B8BB6D5145B21D6BFC /* Info.plist */,
 				B1FD2C669B7A56824431CBD2 /* main.swift */,
@@ -160,10 +170,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A272E0E793C35ABBD6C3B27C /* Build configuration list for PBXNativeTarget "GigEVirtualCamera" */;
 			buildPhases = (
+				129E59276CF8FAF4DF6C4655 /* Make Scripts Executable */,
 				60AA9CE962AD2503BD7A13AA /* Sources */,
+				003B4DFF38C1909ACF0A9098 /* Resources */,
+				A58789CBC5458D390FEB59CA /* Embed Foundation Extensions */,
 				4ED6D124F202D4658B1EDFC5 /* Bundle Aravis Libraries */,
-				8F9A0B1C2D3E4F5A6B7C8D9E /* Sign Frameworks */,
-				E35DC7AE2E106BEE000F951A /* Copy Files */,
 			);
 			buildRules = (
 			);
@@ -206,6 +217,7 @@
 			);
 			mainGroup = 4339E87F6BCB3F9645DC377F;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 54;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -215,7 +227,37 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		003B4DFF38C1909ACF0A9098 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5167D3DB450F7851540C99AD /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
+		129E59276CF8FAF4DF6C4655 /* Make Scripts Executable */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Make Scripts Executable";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -d \"${SRCROOT}/Scripts\" ]; then\n  chmod +x \"${SRCROOT}/Scripts/\"*.sh\nfi\n";
+		};
 		4ED6D124F202D4658B1EDFC5 /* Bundle Aravis Libraries */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -235,25 +277,6 @@
 			shellPath = /bin/sh;
 			shellScript = "if [ \"${CONFIGURATION}\" = \"Debug\" ] || [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  \"${SRCROOT}/Scripts/bundle_aravis.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \"${SRCROOT}/Scripts/fix_rpaths.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\nfi\n";
 		};
-		8F9A0B1C2D3E4F5A6B7C8D9E /* Sign Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Sign Frameworks";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${SRCROOT}/Scripts/sign_frameworks.sh\"\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -265,6 +288,7 @@
 				38C22790775F164D92C31F38 /* CameraDeviceSource.swift in Sources */,
 				30F234F45C8211E74AF686B8 /* CameraProviderSource.swift in Sources */,
 				3F2DC1D479702F370D765D2E /* CameraStreamSource.swift in Sources */,
+				4208CFDDA213D4814862BA5B /* DesignSystem.swift in Sources */,
 				7E18D4CF4225ACE7D6AFCDD6 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -274,11 +298,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				1F8EF9CCCD7C0E04C8A94AF2 /* AravisBridge.mm in Sources */,
+				D3A632A863EE95A66CD83039 /* CMIOFrameSender.swift in Sources */,
 				5CF8213FB1E982EA0F76EA25 /* CameraConstants.swift in Sources */,
 				DF218341570648066EE4D859 /* CameraManager.swift in Sources */,
+				78A8516529854A979EA71BDB /* CameraPreviewView.swift in Sources */,
 				91AC552492FCCD5F93B1787C /* ContentView.swift in Sources */,
-				4B8E2F0345678901BCDEF234 /* CMIOFrameSender.swift in Sources */,
-				6D0A9F3567890123DEF45678 /* CameraPreviewView.swift in Sources */,
 				C3245C66397FF46C0F9966DE /* DesignSystem.swift in Sources */,
 				56F45446257DB667908E2553 /* GigECameraApp.swift in Sources */,
 				7FBA8050AB7022DE5D99B41A /* GigECameraManager.swift in Sources */,
@@ -330,7 +354,6 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "Developer ID Application";
-				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -383,22 +406,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GigECameraApp/GigECamera.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
-				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = GigECameraApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera;
-				PROVISIONING_PROFILE_SPECIFIER = "GigE Virtual Camera Dev";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Virtual Camera Dev";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Shared/GigEVirtualCamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -409,32 +426,23 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = GigECameraExtension/GigECameraExtension.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
-				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
-				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
-				ENABLE_HARDENED_RUNTIME = YES;
-				HEADER_SEARCH_PATHS = "";
+				HEADER_SEARCH_PATHS = (
+				);
 				INFOPLIST_FILE = GigECameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = (
+				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = "";
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera.Extension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "GigE Camera Extension Dev";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Camera Extension Dev";
 				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_VERSION = 5.0;
-				WRAPPER_EXTENSION = appex;
 			};
 			name = Release;
 		};
@@ -442,31 +450,23 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = GigECameraExtension/GigECameraExtension.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
-				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
-				ENABLE_HARDENED_RUNTIME = YES;
-				HEADER_SEARCH_PATHS = "";
+				HEADER_SEARCH_PATHS = (
+				);
 				INFOPLIST_FILE = GigECameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = (
+				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = "";
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera.Extension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "GigE Camera Extension Dev";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Camera Extension Dev";
 				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_VERSION = 5.0;
-				WRAPPER_EXTENSION = appex;
 			};
 			name = Debug;
 		};
@@ -475,23 +475,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GigECameraApp/GigECamera.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
-				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
-				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = GigECameraApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera;
-				PROVISIONING_PROFILE_SPECIFIER = "GigE Virtual Camera Dev";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Virtual Camera Dev";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Shared/GigEVirtualCamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -531,7 +524,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;

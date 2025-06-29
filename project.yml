@@ -8,7 +8,7 @@ options:
 settings:
   DEVELOPMENT_TEAM: S368GH6KF7
   CODE_SIGN_STYLE: Manual
-  CODE_SIGN_IDENTITY: "Apple Development"
+  CODE_SIGN_IDENTITY: "Developer ID Application"
   # Aravis settings
   HEADER_SEARCH_PATHS: 
     - /opt/homebrew/include
@@ -57,7 +57,7 @@ targets:
       CURRENT_PROJECT_VERSION: 1
       SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
       OTHER_LDFLAGS: $(inherited)
-      PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
+      # PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
     preBuildScripts:
       - script: |
           if [ -d "${SRCROOT}/Scripts" ]; then
@@ -81,11 +81,11 @@ targets:
       - GigECameraExtension
       - path: Shared
         excludes:
-          # Uncomment to use stub implementation
-          # - "*.mm"
-          # - "*.h"
-          # Comment out to use real Aravis implementation
           - "AravisBridge-Stub.swift"
+          - "AravisBridge.mm"
+          - "AravisBridge.h"
+          - "GigEVirtualCamera-Bridging-Header.h"
+          - "GigECameraManager.swift"
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera.Extension
       INFOPLIST_FILE: GigECameraExtension/Info.plist
@@ -93,6 +93,10 @@ targets:
       SWIFT_VERSION: 5.0
       MARKETING_VERSION: 1.0
       CURRENT_PROJECT_VERSION: 1
-      SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
-      OTHER_LDFLAGS: $(inherited)
-      PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"
+      # Remove bridging header for extension
+      # SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
+      # Override global settings to remove Aravis dependencies
+      HEADER_SEARCH_PATHS: []
+      LIBRARY_SEARCH_PATHS: []
+      OTHER_LDFLAGS: -ObjC
+      # PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"

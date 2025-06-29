@@ -24,28 +24,40 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
     override init() {
         super.init()
         
+        logger.info("Initializing CameraDeviceSource...")
+        
         // Create shared frame queue
         var queue: CMSimpleQueue?
-        CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: 30, queueOut: &queue)
-        sharedFrameQueue = queue
+        let queueStatus = CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: 30, queueOut: &queue)
+        if queueStatus == noErr, let queue = queue {
+            sharedFrameQueue = queue
+            logger.info("Created shared frame queue with capacity 30")
+        } else {
+            logger.error("Failed to create shared frame queue: \(queueStatus)")
+        }
         
-        let deviceID = UUID()
+        // Use a persistent device ID
+        let deviceID = UUID(uuidString: "A8B5D2F4-1234-5678-9ABC-DEF012345678") ?? UUID()
+        logger.info("Creating device with ID: \(deviceID.uuidString)")
+        
         device = CMIOExtensionDevice(localizedName: CameraConstants.Camera.name,
                                      deviceID: deviceID,
                                      legacyDeviceID: nil,
                                      source: self)
         
         // Create sink stream (receives frames from app)
-        sinkStream = CameraStreamSource(localizedName: "GigE Camera Input", direction: .sink)
+        sinkStream = CameraStreamSource(localizedName: "GigE Camera Input", 
+                                       direction: .sink,
+                                       deviceID: deviceID,
+                                       frameQueue: sharedFrameQueue)
         
         // Create source stream (provides frames to clients)
-        sourceStream = CameraStreamSource(localizedName: "GigE Camera Stream", direction: .source)
+        sourceStream = CameraStreamSource(localizedName: "GigE Camera Stream", 
+                                         direction: .source,
+                                         deviceID: deviceID,
+                                         frameQueue: sharedFrameQueue)
         
-        // Share the queue between streams
-        if sinkStream != nil, sourceStream != nil {
-            // Both streams will use the same queue
-            logger.info("Created sink and source streams with shared queue")
-        }
+        logger.info("Created sink and source streams with shared queue")
         
         do {
             // Add both streams to device
@@ -68,7 +80,9 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
     var availableProperties: Set<CMIOExtensionProperty> {
         return [
             .deviceTransportType,
-            .deviceModel
+            .deviceModel,
+            .deviceIsSuspended,
+            .deviceLinkedCoreAudioDeviceUID
         ]
     }
     
@@ -84,6 +98,17 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         if properties.contains(.deviceModel) {
             let model = CMIOExtensionPropertyState(value: "GigE Vision Camera" as NSString as AnyObject)
             propertyStates[.deviceModel] = model
+        }
+        
+        if properties.contains(.deviceIsSuspended) {
+            let suspended = CMIOExtensionPropertyState(value: NSNumber(value: false) as AnyObject)
+            propertyStates[.deviceIsSuspended] = suspended
+        }
+        
+        if properties.contains(.deviceLinkedCoreAudioDeviceUID) {
+            // No audio device linked
+            let noAudio = CMIOExtensionPropertyState(value: NSNull() as AnyObject)
+            propertyStates[.deviceLinkedCoreAudioDeviceUID] = noAudio
         }
         
         return CMIOExtensionDeviceProperties(dictionary: propertyStates)

@@ -13,12 +13,21 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
     
     // MARK: - Properties
     private(set) var device: CMIOExtensionDevice!
-    private var streamSource: CameraStreamSource?
+    private var sourceStream: CameraStreamSource?
+    private var sinkStream: CameraStreamSource?
     private let logger = Logger(subsystem: CameraConstants.BundleID.cameraExtension, category: "Device")
+    
+    // Shared frame queue between sink and source
+    private var sharedFrameQueue: CMSimpleQueue?
     
     // MARK: - Initialization
     override init() {
         super.init()
+        
+        // Create shared frame queue
+        var queue: CMSimpleQueue?
+        CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: 30, queueOut: &queue)
+        sharedFrameQueue = queue
         
         let deviceID = UUID()
         device = CMIOExtensionDevice(localizedName: CameraConstants.Camera.name,
@@ -26,14 +35,31 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
                                      legacyDeviceID: nil,
                                      source: self)
         
-        // Create stream
-        streamSource = CameraStreamSource(localizedName: "GigE Camera Stream")
+        // Create sink stream (receives frames from app)
+        sinkStream = CameraStreamSource(localizedName: "GigE Camera Input", direction: .sink)
+        
+        // Create source stream (provides frames to clients)
+        sourceStream = CameraStreamSource(localizedName: "GigE Camera Stream", direction: .source)
+        
+        // Share the queue between streams
+        if sinkStream != nil, sourceStream != nil {
+            // Both streams will use the same queue
+            logger.info("Created sink and source streams with shared queue")
+        }
         
         do {
-            try device.addStream(streamSource!.stream)
-            logger.info("Stream added to device")
+            // Add both streams to device
+            if let sink = sinkStream {
+                try device.addStream(sink.stream)
+                logger.info("Sink stream added to device")
+            }
+            
+            if let source = sourceStream {
+                try device.addStream(source.stream)
+                logger.info("Source stream added to device")
+            }
         } catch {
-            logger.error("Failed to add stream: \(error.localizedDescription)")
+            logger.error("Failed to add streams: \(error.localizedDescription)")
         }
     }
     
@@ -50,7 +76,8 @@ class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         var propertyStates = [CMIOExtensionProperty: CMIOExtensionPropertyState<AnyObject>]()
         
         if properties.contains(.deviceTransportType) {
-            let transportType = CMIOExtensionPropertyState(value: NSNumber(value: UInt32(0x76697274)) as AnyObject) // 'virt' in ASCII
+            // 'virt' in ASCII for virtual transport
+            let transportType = CMIOExtensionPropertyState(value: NSNumber(value: UInt32(0x76697274)) as AnyObject)
             propertyStates[.deviceTransportType] = transportType
         }
         

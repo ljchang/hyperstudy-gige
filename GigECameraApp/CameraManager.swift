@@ -8,7 +8,6 @@
 import Foundation
 import SwiftUI
 import os.log
-import SystemExtensions
 
 @MainActor
 class CameraManager: NSObject, ObservableObject {
@@ -17,7 +16,6 @@ class CameraManager: NSObject, ObservableObject {
     // MARK: - Published Properties
     @Published var isConnected = false
     @Published var isExtensionInstalled = false
-    @Published var isInstalling = false
     @Published var cameraModel = "Unknown"
     @Published var currentFormat = "1920×1080 @ 30fps"
     @Published var availableCameras: [AravisCamera] = []
@@ -50,6 +48,8 @@ class CameraManager: NSObject, ObservableObject {
     @Published var isShowingPreview = false
     
     // MARK: - Private Properties
+    private let cmioFrameSender = CMIOFrameSender()
+    private var isFrameSenderConnected = false
     
     // MARK: - Computed Properties
     var statusText: String {
@@ -78,6 +78,7 @@ class CameraManager: NSObject, ObservableObject {
     private override init() {
         super.init()
         setupNotifications()
+        setupFrameSender()
         // Delay checking extension status to ensure UI is ready
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.checkExtensionStatus()
@@ -85,67 +86,29 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     // MARK: - Extension Management
-    func installExtension() async {
-        await MainActor.run {
-            isInstalling = true
-        }
-        
-        logger.info("Installing camera system extension...")
-        
-        let request = OSSystemExtensionRequest.activationRequest(
-            forExtensionWithIdentifier: CameraConstants.BundleID.cameraExtension,
-            queue: .main
-        )
-        request.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(request)
-    }
-    
-    func uninstallExtension() async {
-        await MainActor.run {
-            isInstalling = true
-        }
-        
-        logger.info("Deactivating camera system extension...")
-        
-        let request = OSSystemExtensionRequest.deactivationRequest(
-            forExtensionWithIdentifier: CameraConstants.BundleID.cameraExtension,
-            queue: .main
-        )
-        request.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(request)
-    }
+    // CMIOExtensions are automatically loaded when app is in /Applications
+    // No manual installation/uninstallation needed
     
     // MARK: - Private Methods
     private func checkExtensionStatus() {
-        // Check if extension was previously installed
-        isExtensionInstalled = UserDefaults.standard.bool(forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
+        // CMIOExtensions are automatically loaded when app is in /Applications
+        // No need for system extension activation
         
-        if isExtensionInstalled {
-            checkCameraConnection()
+        // Check if we're running from /Applications
+        let appPath = Bundle.main.bundlePath
+        if appPath.hasPrefix("/Applications/") {
+            logger.info("Running from /Applications - CMIOExtension should be available")
+            isExtensionInstalled = true
+            UserDefaults.standard.set(true, forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
         } else {
-            // Attempt to activate the extension on first launch
-            Task {
-                await activateExtension()
-            }
+            logger.warning("Not running from /Applications - CMIOExtension may not load")
+            logger.warning("Current path: \(appPath)")
+            isExtensionInstalled = false
         }
+        
+        checkCameraConnection()
     }
     
-    private func activateExtension() async {
-        logger.info("Attempting to activate camera extension...")
-        
-        await MainActor.run {
-            self.isInstalling = true
-        }
-        
-        let request = OSSystemExtensionRequest.activationRequest(
-            forExtensionWithIdentifier: CameraConstants.BundleID.cameraExtension,
-            queue: .main
-        )
-        request.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(request)
-        
-        logger.info("Extension request submitted for: \(CameraConstants.BundleID.cameraExtension)")
-    }
     
     private func checkCameraConnection() {
         // Check actual camera connection through GigECameraManager
@@ -288,66 +251,38 @@ class CameraManager: NSObject, ObservableObject {
         
         // The actual cleanup is handled by the CameraPreviewSection's onDisappear
     }
-}
-
-// MARK: - OSSystemExtensionRequestDelegate
-extension CameraManager: OSSystemExtensionRequestDelegate {
-    nonisolated func request(_ request: OSSystemExtensionRequest, actionForReplacingExtension existing: OSSystemExtensionProperties, withExtension ext: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
-        logger.info("Replacing existing extension...")
-        return .replace
-    }
     
-    nonisolated func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
-        logger.info("Extension needs user approval")
-        DispatchQueue.main.async {
-            self.isInstalling = false
-            // Show alert to user
-            let alert = NSAlert()
-            alert.messageText = "System Extension Blocked"
-            alert.informativeText = "Please allow the extension in System Settings > Privacy & Security"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Open System Settings")
-            alert.addButton(withTitle: "OK")
-            
-            if alert.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
-            }
+    // MARK: - CMIO Frame Sender
+    private func setupFrameSender() {
+        // Try to connect to the virtual camera extension
+        connectFrameSender()
+        
+        // Set up frame handler to send frames to extension
+        let gigEManager = GigECameraManager.shared
+        gigEManager.addFrameHandler { [weak self] pixelBuffer in
+            self?.cmioFrameSender.sendFrame(pixelBuffer)
         }
     }
     
-    nonisolated func request(_ request: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
-        logger.info("Extension request finished with result: \(result.rawValue)")
-        
-        DispatchQueue.main.async {
-            self.isInstalling = false
+    private func connectFrameSender() {
+        // Try to connect in background
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            guard let self = self else { return }
             
-            switch result {
-            case .completed:
-                self.isExtensionInstalled = true
-                UserDefaults.standard.set(true, forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
-                self.checkCameraConnection()
+            // Wait a bit for the extension to be ready
+            Thread.sleep(forTimeInterval: 1.0)
+            
+            if self.cmioFrameSender.connect() {
+                self.isFrameSenderConnected = true
+                self.logger.info("Successfully connected to CMIO extension")
+            } else {
+                self.logger.warning("Failed to connect to CMIO extension - will show test pattern")
                 
-            case .willCompleteAfterReboot:
-                let alert = NSAlert()
-                alert.messageText = "Reboot Required"
-                alert.informativeText = "The camera extension will be available after you restart your Mac."
-                alert.alertStyle = .informational
-                alert.runModal()
-                
-            @unknown default:
-                break
+                // Retry after a delay
+                DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 5.0) {
+                    self.connectFrameSender()
+                }
             }
-        }
-    }
-    
-    nonisolated func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
-        logger.error("Extension request failed: \(error.localizedDescription)")
-        
-        DispatchQueue.main.async {
-            self.isInstalling = false
-            
-            // Don't show alerts for expected errors
-            // The system will handle notifying the user appropriately
         }
     }
 }

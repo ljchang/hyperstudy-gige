@@ -27,14 +27,16 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
     
     // Frame generation
     private var frameCounter: UInt64 = 0
-    private var latestCameraFrame: CVPixelBuffer?
-    private let frameBufferLock = NSLock()
     
-    // Camera manager
-    private let cameraManager = GigECameraManager.shared
+    // Frame queue for sink/source pattern
+    private var frameQueue: CMSimpleQueue?
+    private let queueLock = NSLock()
+    
+    // Test pattern mode (used when no frames from sink)
+    private var useTestPattern = true
     
     // MARK: - Initialization
-    init(localizedName: String) {
+    init(localizedName: String, direction: CMIOExtensionStream.Direction = .source) {
         // Create supported formats
         var formatList: [CMIOExtensionStreamFormat] = []
         
@@ -54,12 +56,11 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         let streamID = UUID()
         stream = CMIOExtensionStream(localizedName: localizedName,
                                      streamID: streamID,
-                                     direction: .source,
+                                     direction: direction,
                                      clockType: .hostTime,
                                      source: self)
         
-        // Set up camera frame handler
-        setupCameraFrameHandler()
+        logger.info("Created \(direction == .source ? "source" : "sink") stream: \(localizedName)")
     }
     
     // MARK: - Format Creation
@@ -90,13 +91,15 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         )
     }
     
-    // MARK: - CMIOExtensionStreamSource
+    // MARK: - CMIOExtensionStreamSource Protocol
     
     var availableProperties: Set<CMIOExtensionProperty> {
         return [
             .streamActiveFormatIndex,
             .streamFrameDuration,
-            .streamMaxFrameDuration
+            .streamMaxFrameDuration,
+            .streamSinkBufferQueueSize,
+            .streamSinkBuffersRequiredForStartup
         ]
     }
     
@@ -131,6 +134,14 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
             streamProperties.frameDuration = _formats[_activeFormatIndex].maxFrameDuration
         }
         
+        if properties.contains(.streamSinkBufferQueueSize) {
+            streamProperties.sinkBufferQueueSize = 30
+        }
+        
+        if properties.contains(.streamSinkBuffersRequiredForStartup) {
+            streamProperties.sinkBuffersRequiredForStartup = 1
+        }
+        
         return streamProperties
     }
     
@@ -151,12 +162,6 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         logger.info("Starting stream...")
         isStreaming = true
         
-        // Start camera streaming if connected
-        if cameraManager.isConnected && !cameraManager.isStreaming {
-            logger.info("Starting camera stream...")
-            cameraManager.startStreaming()
-        }
-        
         startStreaming()
     }
     
@@ -166,19 +171,57 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         logger.info("Stopping stream...")
         isStreaming = false
         
-        // Stop camera streaming
-        if cameraManager.isStreaming {
-            logger.info("Stopping camera stream...")
-            cameraManager.stopStreaming()
+        stopStreaming()
+    }
+    
+    // MARK: - Sink Stream Support
+    
+    func consumeSampleBuffer(from client: CMIOExtensionClient, 
+                           sample: CMSampleBuffer,
+                           discontinuity: CMIOExtensionStream.DiscontinuityFlags,
+                           hostTimeInNanoseconds: UInt64) {
+        // This method is called when we receive frames as a sink
+        guard stream.direction == .sink else { return }
+        
+        queueLock.lock()
+        if let queue = frameQueue {
+            // Check if queue is full
+            if CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue) {
+                let retained = Unmanaged.passRetained(sample as AnyObject).toOpaque()
+                CMSimpleQueueEnqueue(queue, element: retained)
+                useTestPattern = false
+            } else {
+                logger.warning("Frame queue full, dropping frame")
+            }
+        }
+        queueLock.unlock()
+    }
+    
+    // MARK: - Source Stream Support
+    
+    func getFrameFromQueue() -> CMSampleBuffer? {
+        guard stream.direction == .source else { return nil }
+        
+        queueLock.lock()
+        defer { queueLock.unlock() }
+        
+        if let queue = frameQueue,
+           CMSimpleQueueGetCount(queue) > 0,
+           let framePtr = CMSimpleQueueDequeue(queue) {
+            let frame = Unmanaged<AnyObject>.fromOpaque(framePtr).takeRetainedValue()
+            return (frame as! CMSampleBuffer)
         }
         
-        stopStreaming()
+        return nil
     }
     
     // MARK: - Streaming Control
     
     func startStreaming() {
         guard isStreaming else { return }
+        
+        // Only start timer for source streams
+        guard stream.direction == .source else { return }
         
         // Get current format
         let format = _formats[_activeFormatIndex]
@@ -187,7 +230,7 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
         let frameDuration = format.maxFrameDuration
         let frameRate = 1.0 / CMTimeGetSeconds(frameDuration)
         
-        logger.info("Starting stream: \(dimensions.width)x\(dimensions.height) @ \(frameRate)fps")
+        logger.info("Starting source stream: \(dimensions.width)x\(dimensions.height) @ \(frameRate)fps")
         
         // Create timer for frame generation
         timer = DispatchSource.makeTimerSource(queue: streamQueue)
@@ -207,66 +250,79 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
     
     private func generateAndSendFrame() {
         autoreleasepool {
-            guard let format = _formats[safe: _activeFormatIndex] else { return }
-            
-            let formatDesc = format.formatDescription
-            let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
-            
-            // Try to get frame from camera
-            if let cameraFrame = getLatestCameraFrame() {
-                sendCameraFrame(cameraFrame, format: format)
+            // Try to get frame from queue first
+            if let queuedFrame = getFrameFromQueue() {
+                // Send the queued frame
+                if CMSampleBufferGetImageBuffer(queuedFrame) != nil {
+                    let timestamp = CMSampleBufferGetPresentationTimeStamp(queuedFrame)
+                    stream.send(queuedFrame, discontinuity: [], 
+                              hostTimeInNanoseconds: UInt64(timestamp.seconds * 1_000_000_000))
+                }
                 return
             }
             
-            // Fallback to test pattern if no camera
-            var pixelBuffer: CVPixelBuffer?
-            let status = CVPixelBufferCreate(
-                kCFAllocatorDefault,
-                Int(dimensions.width),
-                Int(dimensions.height),
-                kCVPixelFormatType_422YpCbCr8,
-                [
-                    kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
-                ] as CFDictionary,
-                &pixelBuffer
+            // If no frames in queue and test pattern is enabled, generate one
+            if useTestPattern {
+                generateTestPatternFrame()
+            }
+        }
+    }
+    
+    private func generateTestPatternFrame() {
+        guard let format = _formats[safe: _activeFormatIndex] else { return }
+        
+        let formatDesc = format.formatDescription
+        let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
+        
+        // Create pixel buffer
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            Int(dimensions.width),
+            Int(dimensions.height),
+            kCVPixelFormatType_422YpCbCr8,
+            [
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            ] as CFDictionary,
+            &pixelBuffer
+        )
+        
+        guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
+            logger.error("Failed to create pixel buffer")
+            return
+        }
+        
+        // Fill with test pattern
+        fillTestPattern(pixelBuffer: buffer, frameNumber: frameCounter)
+        frameCounter += 1
+        
+        // Create timing info
+        var timingInfo = CMSampleTimingInfo()
+        timingInfo.presentationTimeStamp = CMClockGetTime(CMClockGetHostTimeClock())
+        timingInfo.duration = format.maxFrameDuration
+        
+        // Create sample buffer
+        var sampleBuffer: CMSampleBuffer?
+        var formatDescription: CMFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+                                                    imageBuffer: buffer,
+                                                    formatDescriptionOut: &formatDescription)
+        
+        if let formatDesc = formatDescription {
+            var sampleTiming = timingInfo
+            
+            CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: buffer,
+                formatDescription: formatDesc,
+                sampleTiming: &sampleTiming,
+                sampleBufferOut: &sampleBuffer
             )
             
-            guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
-                logger.error("Failed to create pixel buffer")
-                return
-            }
-            
-            // Fill with test pattern
-            fillTestPattern(pixelBuffer: buffer, frameNumber: frameCounter)
-            frameCounter += 1
-            
-            // Create timing info
-            var timingInfo = CMSampleTimingInfo()
-            timingInfo.presentationTimeStamp = CMClockGetTime(CMClockGetHostTimeClock())
-            timingInfo.duration = format.maxFrameDuration
-            
-            // Create sample buffer
-            var sampleBuffer: CMSampleBuffer?
-            var formatDescription: CMFormatDescription?
-            CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
-                                                        imageBuffer: buffer,
-                                                        formatDescriptionOut: &formatDescription)
-            
-            if let formatDesc = formatDescription {
-                var sampleTiming = timingInfo
-                
-                CMSampleBufferCreateReadyWithImageBuffer(
-                    allocator: kCFAllocatorDefault,
-                    imageBuffer: buffer,
-                    formatDescription: formatDesc,
-                    sampleTiming: &sampleTiming,
-                    sampleBufferOut: &sampleBuffer
-                )
-                
-                if let sampleBuffer = sampleBuffer {
-                    // Send frame
-                    stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: UInt64(timingInfo.presentationTimeStamp.seconds * 1_000_000_000))
-                }
+            if let sampleBuffer = sampleBuffer {
+                // Send frame
+                stream.send(sampleBuffer, discontinuity: [], 
+                          hostTimeInNanoseconds: UInt64(timingInfo.presentationTimeStamp.seconds * 1_000_000_000))
             }
         }
     }
@@ -331,157 +387,6 @@ class CameraStreamSource: NSObject, CMIOExtensionStreamSource {
                 }
             }
         }
-    }
-    
-    // MARK: - Camera Integration
-    
-    private func setupCameraFrameHandler() {
-        cameraManager.addFrameHandler { [weak self] pixelBuffer in
-            self?.handleCameraFrame(pixelBuffer)
-        }
-    }
-    
-    private func handleCameraFrame(_ pixelBuffer: CVPixelBuffer) {
-        frameBufferLock.lock()
-        latestCameraFrame = pixelBuffer
-        frameBufferLock.unlock()
-    }
-    
-    private func getLatestCameraFrame() -> CVPixelBuffer? {
-        frameBufferLock.lock()
-        let frame = latestCameraFrame
-        frameBufferLock.unlock()
-        return frame
-    }
-    
-    private func sendCameraFrame(_ cameraFrame: CVPixelBuffer, format: CMIOExtensionStreamFormat) {
-        // Convert camera frame to required format if needed
-        let outputBuffer = convertPixelBuffer(cameraFrame, to: format)
-        
-        // Create timing info
-        var timingInfo = CMSampleTimingInfo()
-        timingInfo.presentationTimeStamp = CMClockGetTime(CMClockGetHostTimeClock())
-        timingInfo.duration = format.maxFrameDuration
-        
-        // Create sample buffer and send
-        var sampleBuffer: CMSampleBuffer?
-        var formatDescription: CMFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
-                                                    imageBuffer: outputBuffer,
-                                                    formatDescriptionOut: &formatDescription)
-        
-        if let formatDesc = formatDescription {
-            var sampleTiming = timingInfo
-            
-            CMSampleBufferCreateReadyWithImageBuffer(
-                allocator: kCFAllocatorDefault,
-                imageBuffer: outputBuffer,
-                formatDescription: formatDesc,
-                sampleTiming: &sampleTiming,
-                sampleBufferOut: &sampleBuffer
-            )
-            
-            if let sampleBuffer = sampleBuffer {
-                stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: UInt64(timingInfo.presentationTimeStamp.seconds * 1_000_000_000))
-            }
-        }
-    }
-    
-    private func convertPixelBuffer(_ input: CVPixelBuffer, to format: CMIOExtensionStreamFormat) -> CVPixelBuffer {
-        let inputPixelFormat = CVPixelBufferGetPixelFormatType(input)
-        let formatDesc = format.formatDescription
-        let outputPixelFormat = CMFormatDescriptionGetMediaSubType(formatDesc)
-        
-        // If formats match, return as-is
-        if inputPixelFormat == outputPixelFormat {
-            return input
-        }
-        
-        // Convert BGRA to YUV 422 if needed
-        if inputPixelFormat == kCVPixelFormatType_32BGRA && outputPixelFormat == kCVPixelFormatType_422YpCbCr8 {
-            return convertBGRAToYUV422(input) ?? input
-        }
-        
-        // Return input if no conversion implemented
-        return input
-    }
-    
-    private func convertBGRAToYUV422(_ bgraBuffer: CVPixelBuffer) -> CVPixelBuffer? {
-        CVPixelBufferLockBaseAddress(bgraBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(bgraBuffer, .readOnly) }
-        
-        let width = CVPixelBufferGetWidth(bgraBuffer)
-        let height = CVPixelBufferGetHeight(bgraBuffer)
-        
-        // Create YUV buffer
-        var yuvBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            kCVPixelFormatType_422YpCbCr8,
-            [
-                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
-            ] as CFDictionary,
-            &yuvBuffer
-        )
-        
-        guard status == kCVReturnSuccess, let outputBuffer = yuvBuffer else {
-            return nil
-        }
-        
-        CVPixelBufferLockBaseAddress(outputBuffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(outputBuffer, []) }
-        
-        guard let bgraData = CVPixelBufferGetBaseAddress(bgraBuffer),
-              let yuvData = CVPixelBufferGetBaseAddress(outputBuffer) else {
-            return nil
-        }
-        
-        let bgraBytesPerRow = CVPixelBufferGetBytesPerRow(bgraBuffer)
-        let yuvBytesPerRow = CVPixelBufferGetBytesPerRow(outputBuffer)
-        
-        let bgra = bgraData.bindMemory(to: UInt8.self, capacity: bgraBytesPerRow * height)
-        let yuv = yuvData.bindMemory(to: UInt8.self, capacity: yuvBytesPerRow * height)
-        
-        // Convert BGRA to YUV 422
-        for y in 0..<height {
-            for x in stride(from: 0, to: width, by: 2) {
-                let bgraIndex1 = y * bgraBytesPerRow + x * 4
-                let bgraIndex2 = y * bgraBytesPerRow + (x + 1) * 4
-                let yuvIndex = y * yuvBytesPerRow + x * 2
-                
-                // Get BGRA values for two pixels
-                let b1 = Float(bgra[bgraIndex1])
-                let g1 = Float(bgra[bgraIndex1 + 1])
-                let r1 = Float(bgra[bgraIndex1 + 2])
-                
-                let b2 = Float(bgra[bgraIndex2])
-                let g2 = Float(bgra[bgraIndex2 + 1])
-                let r2 = Float(bgra[bgraIndex2 + 2])
-                
-                // Convert to YUV (ITU-R BT.601)
-                let y1 = 0.299 * r1 + 0.587 * g1 + 0.114 * b1
-                let y2 = 0.299 * r2 + 0.587 * g2 + 0.114 * b2
-                
-                // Average the two pixels for chroma
-                let avgR = (r1 + r2) / 2
-                let avgG = (g1 + g2) / 2
-                let avgB = (b1 + b2) / 2
-                let avgY = (y1 + y2) / 2
-                
-                let u = -0.147 * avgR - 0.289 * avgG + 0.436 * avgB + 128
-                let v = 0.615 * avgR - 0.515 * avgG - 0.100 * avgB + 128
-                
-                // Pack as YUV 422: Cb Y0 Cr Y1
-                yuv[yuvIndex] = UInt8(clamping: Int(u))
-                yuv[yuvIndex + 1] = UInt8(clamping: Int(y1))
-                yuv[yuvIndex + 2] = UInt8(clamping: Int(v))
-                yuv[yuvIndex + 3] = UInt8(clamping: Int(y2))
-            }
-        }
-        
-        return outputBuffer
     }
 }
 

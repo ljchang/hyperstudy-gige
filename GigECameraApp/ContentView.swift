@@ -131,22 +131,15 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Extension status or installation info
+                // Extension status info
                 if !cameraManager.isExtensionInstalled {
                     VStack(spacing: DesignSystem.Spacing.small) {
-                        if cameraManager.isInstalling {
-                            HStack {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                    .scaleEffect(0.8)
-                                Text("Installing camera extension...")
-                                    .font(DesignSystem.Typography.callout)
-                            }
-                        } else {
-                            Text("Camera extension activation required")
-                                .font(DesignSystem.Typography.caption)
-                                .foregroundColor(DesignSystem.Colors.textSecondary)
-                        }
+                        Text("App must be run from /Applications folder")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundColor(DesignSystem.Colors.statusOrange)
+                        Text("Move the app to Applications and restart")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundColor(DesignSystem.Colors.textSecondary)
                     }
                     .padding()
                 }

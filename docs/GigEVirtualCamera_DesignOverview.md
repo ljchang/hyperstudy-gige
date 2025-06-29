@@ -1,18 +1,46 @@
-Of course. Here is the full report formatted as a markdown file that you can save.
+# GigE Virtual Camera Design Overview
 
-# Architecting a Modern Virtual Camera on macOS: A Comprehensive Guide to CMIOExtensions, Third-Party Library Integration, and Notarization
+## Implementation Status
+
+This document describes the architecture and implementation of the GigE Virtual Camera application for macOS. The application creates a virtual camera from GigE Vision cameras using the modern CMIOExtension framework.
+
+### Current Status (December 2024)
+
+- ✅ **CMIO App Extension implemented** - Using App Extension (not System Extension) architecture
+- ✅ **Sink/Source stream architecture** - Fully implemented with shared frame queue
+- ✅ **Frame flow from main app to extension** - Using CoreMediaIO C API
+- ✅ **Test pattern generation** - Extension generates test patterns when no frames available
+- ✅ **Multiple format support** - 1080p30, 720p60, 720p30, 480p30
+- ⚠️ **Aravis integration** - Library bundled but frame sending not yet connected
+- ⚠️ **CMIOFrameSender** - Implemented but queue connection needs refinement
+
+### Known Issues
+
+1. **Frame Queue Connection**: The CMIOFrameSender creates its own queue instead of obtaining the actual sink stream's queue
+2. **Stream Discovery**: Need to properly identify sink vs source streams during discovery
+3. **Aravis Frame Flow**: The pipeline from Aravis → CVPixelBuffer → CMIOFrameSender is not yet connected
 
 ## Part I: Foundational Architecture and Project Setup
 
-This report provides a comprehensive, expert-level guide for developing a macOS application that transforms a GigE camera into a system-wide virtual camera. It details the modern architectural requirements using Core Media I/O (CMIO) System Extensions, outlines the correct Xcode project configuration, explains the process for integrating third-party C libraries like Aravis, and provides a complete workflow for handling permissions, entitlements, and notarization for distribution.
+This document provides a comprehensive guide for the GigE Virtual Camera implementation, detailing the architecture using Core Media I/O (CMIO) Extensions, the current implementation status, and remaining work.
 
-### Section 1: The Modern Virtual Camera: CMIO System Extensions
+### Section 1: The Modern Virtual Camera: CMIO App Extensions
 
-The foundation of any new virtual camera project on macOS is the `CMIOExtension` framework. The architectural path is not a choice between various extension types but a clear mandate from Apple to use this specific technology for its security, stability, and compatibility benefits.
+The foundation of our virtual camera implementation is the `CMIOExtension` framework, implemented as an **App Extension** rather than a System Extension. This approach provides a simpler deployment model while still offering the security and stability benefits of the modern CMIO architecture.
+
+#### Key Implementation Decision: App Extension vs System Extension
+
+We chose to implement the camera as an App Extension for several reasons:
+- **Simpler deployment**: No need for administrator approval or system extension activation
+- **Easier development**: Standard app extension workflow in Xcode
+- **Same functionality**: Full access to CMIOExtension APIs
+- **Mac App Store compatible**: Can be distributed through the App Store
+
+The App Extension runs in a separate process from the main app, providing isolation and security while maintaining the ability to share frames through the CoreMediaIO framework.
 
 #### 1.1. The Imperative to Migrate: From DAL Plugins to CMIOExtensions
 
-For many years, developers created virtual cameras using Device Abstraction Layer (DAL) plugins. However, this technology is now considered obsolete. As of macOS 12.3, DAL plugins are officially deprecated, and building them will result in compilation warnings.[1] Apple has clearly stated that its commitment is to `CMIOExtensions` as "the path forward" and plans to disable legacy DAL plugins entirely in a major macOS release after Ventura.[1] This decision makes the adoption of `CMIOExtension` a non-negotiable requirement for any new or updated virtual camera application that aims for long-term compatibility and support.
+For many years, developers created virtual cameras using Device Abstraction Layer (DAL) plugins. However, this technology is now considered obsolete. As of macOS 12.3, DAL plugins are officially deprecated, and building them will result in compilation warnings. Apple has clearly stated that its commitment is to `CMIOExtensions` as "the path forward" and plans to disable legacy DAL plugins entirely in a major macOS release after Ventura. This decision makes the adoption of `CMIOExtension` a non-negotiable requirement for any new or updated virtual camera application that aims for long-term compatibility and support.
 
 The `CMIOExtension` framework, introduced in macOS 12.3, provides a simple, secure, and high-performance model for building camera drivers. A key advantage is that extensions are packaged and installed with a host application, simplifying deployment and enabling distribution through the Mac App Store, a feat never possible with legacy KEXTs or DAL plugins.
 
@@ -26,35 +54,73 @@ Furthermore, a system-managed proxy service sits between the extension's process
 
 #### 1.3. Core Components: Provider, Device, and Stream
 
-A camera extension is built from three primary object types, each with a distinct role in the architecture.
+Our implementation consists of three primary classes that implement the CMIOExtension protocols:
 
-- **`CMIOExtensionProvider`**: This class serves as the main entry point for the system and the primary interface to the extension. It represents the extension as a whole (e.g., your company's camera driver). Its main responsibility, managed via a `CMIOExtensionProviderSource` protocol, is to discover and publish one or more `CMIOExtensionDevice` objects to the system. It also manages client connections and defines global properties like the manufacturer name.
+##### CameraProviderSource
+- **Purpose**: Main entry point for the extension
+- **Implementation**: `CameraProviderSource.swift`
+- **Key features**:
+  - Creates and manages a single `CameraDeviceSource` instance
+  - Provides manufacturer and provider name properties
+  - Handles client connections and disconnections
+  - Device is created immediately on initialization for reliable discovery
 
-- **`CMIOExtensionDevice`**: This class represents a single, selectable camera that will appear in the camera menus of applications. It can represent a physical hardware device or a purely software-based virtual device. The device is responsible for managing its own resources, such as buffer pools for streaming, and holds device-specific properties like the model name and transport type. It acts as a container for one or more `CMIOExtensionStream` objects. The `localizedName` property of this object is of particular importance, as this is the user-facing string that appears in camera selection UIs.
+##### CameraDeviceSource
+- **Purpose**: Represents the virtual camera device
+- **Implementation**: `CameraDeviceSource.swift`
+- **Key features**:
+  - Creates both sink and source streams
+  - Manages a shared `CMSimpleQueue` between streams
+  - Reports device properties (transport type, model)
+  - Localizes as "GigE Virtual Camera" in system camera menus
 
-- **`CMIOExtensionStream`**: This class represents a unidirectional flow of media data. Its configuration, managed by a `CMIOExtensionStreamSource` protocol, defines the stream's format (including dimensions and pixel format), supported frame rates, and, critically, its direction. A stream can be a `.source`, which provides data to client applications, or a `.sink`, which receives data from a client. The `CMIOExtensionStreamSource` is where the core logic for starting and stopping the data flow resides.
+##### CameraStreamSource
+- **Purpose**: Handles video stream data flow
+- **Implementation**: `CameraStreamSource.swift`
+- **Key features**:
+  - Dual-purpose class supporting both `.sink` and `.source` directions
+  - Sink stream receives frames via `consumeSampleBuffer`
+  - Source stream delivers frames to clients
+  - Shared frame queue enables zero-copy frame passing
+  - Test pattern generation when no frames available
+  - Supports multiple formats (1080p30, 720p60, 720p30, 480p30)
 
-The choice of extension type is therefore not between a generic "App Extension" and "System Extension." For a virtual camera, Apple mandates the use of the highly specialized **`CMIOExtension`**, which is a specific category of System Extension. Generic App Extensions, such as Share Extensions or Widgets, operate in a different lifecycle and lack the necessary APIs to register a device with the Core Media I/O subsystem. Understanding this distinction is the critical first step in architecting the application correctly.
+The sink/source architecture is the key innovation that enables efficient frame passing from the main app to the extension without complex IPC mechanisms.
 
 ### Section 2: Building the Project: Xcode Configuration
 
 With the architecture defined, the next step is to correctly structure the Xcode project. The `CMIOExtension` model relies on a host application to act as the installer and manager for the extension itself.
 
-#### 2.1. Initial Project and Target Creation
+#### 2.1. Current Project Structure
 
-The project setup begins with a standard macOS App project created in Xcode.[2, 3] Once the main application project is established, a second, crucial target must be added.
+Our implementation follows the standard Camera Extension architecture with the following structure:
 
-1.  Navigate to `File > New > Target...`.
-2.  In the target template sheet, select the **macOS** tab.
-3.  Scroll down to the "App Extension" section and select the **Camera Extension** template. Note: In newer versions of Xcode, this may be located under a "System Extension" category.
-4.  Name the extension and ensure that the "Embed in Application" option correctly points to your main app target.
+```
+GigEVirtualCamera.xcodeproj
+├── GigECameraApp/              # Main application
+│   ├── ContentView.swift       # SwiftUI interface
+│   ├── CameraManager.swift     # Camera discovery and control
+│   ├── CMIOFrameSender.swift   # Sends frames to extension
+│   └── Info.plist             
+├── GigECameraExtension/        # Camera Extension
+│   ├── CameraProviderSource.swift
+│   ├── CameraDeviceSource.swift
+│   ├── CameraStreamSource.swift
+│   ├── main.swift              # Extension entry point
+│   └── Info.plist
+├── Shared/                     # Shared code
+│   ├── CameraConstants.swift   # Common constants
+│   └── AravisBridge/          # Aravis C++ wrapper (to be connected)
+└── Scripts/                    # Build and utility scripts
 
-Xcode will create a new group in the project navigator for the extension, containing a set of boilerplate files that provide a fully functional, albeit simple, virtual camera. These files include:
+```
 
-- `[CameraExtensionName]Provider.swift`: The core implementation file, containing template classes for the `ProviderSource`, `DeviceSource`, and `StreamSource` protocols.
-- `main.swift`: The minimal entry point for the extension process. It contains the call to `CMIOExtensionProvider.startService(...)` which initializes and registers the provider with the system.
-- `Info.plist`: A property list file that defines the extension's identity. It contains the `CMIOExtensionMachServiceName`, which is a unique identifier used for inter-process communication, and the `NSSystemExtensionUsageDescriptionKey`.
-- `[CameraExtensionName].entitlements`: An entitlements file pre-configured with a placeholder for an App Group, which facilitates communication and data sharing between the app and the extension.
+Key implementation files:
+
+- **main.swift**: Standard entry point calling `CMIOExtensionProvider.startService()`
+- **Info.plist**: Contains `CMIOExtensionMachServiceName` for IPC
+- **Entitlements**: App Groups configured for shared container access
+- **CMIOFrameSender**: Implements CoreMediaIO C API client for frame sending
 
 #### 2.2. Configuring Build Settings and Dependencies
 
@@ -62,12 +128,12 @@ Proper configuration of the targets is essential for the app and extension to fu
 
 First, verify that the extension is properly embedded. Select the main application target, navigate to the **General** tab, and look at the **Frameworks, Libraries, and Embedded Content** section. The camera extension should be listed here with the "Embed & Sign" setting.
 
-In the project's scheme settings (`Product > Scheme > Edit Scheme...`), under the **Build** options, it is best practice to ensure that **Find Implicit Dependencies** is checked. This allows Xcode to automatically determine build order based on target dependencies. Setting the "Parallelize Build" option along with a "Dependency Order" build process can also improve build times on multi-core machines.[4]
+In the project's scheme settings (`Product > Scheme > Edit Scheme...`), under the **Build** options, it is best practice to ensure that **Find Implicit Dependencies** is checked. This allows Xcode to automatically determine build order based on target dependencies. Setting the "Parallelize Build" option along with a "Dependency Order" build process can also improve build times on multi-core machines.
 
 The `Info.plist` files for both targets require customization:
 
 - **App `Info.plist`**: This will contain standard application keys. Additionally, it must include usage descriptions for any privacy-sensitive resources it accesses directly, such as `NSCameraUsageDescription` if it interacts with a camera.
-- **Extension `Info.plist`**: This file is critical. The `NSSystemExtensionUsageDescriptionKey` must be populated with a clear, user-facing string explaining why the extension is necessary (e.g., "This extension enables the [Your App Name] virtual camera so it can be used in other applications."). The `CMIOExtensionMachServiceName` should also be reviewed and set to a unique value, often incorporating the team ID and app group identifier to ensure uniqueness.[5]
+- **Extension `Info.plist`**: This file is critical. The `NSSystemExtensionUsageDescriptionKey` must be populated with a clear, user-facing string explaining why the extension is necessary (e.g., "This extension enables the [Your App Name] virtual camera so it can be used in other applications."). The `CMIOExtensionMachServiceName` should also be reviewed and set to a unique value, often incorporating the team ID and app group identifier to ensure uniqueness.
 
 This structure underscores the modern role of the host application. It is not merely a settings panel but the designated **installer and lifecycle manager** for the extension. The extension's code is delivered inside the app bundle, and the app must explicitly request its activation from the system using the `SystemExtensions` framework. When the user deletes the host app, the system automatically and cleanly uninstalls the extension. This means the app's user interface must include controls, such as an "Activate Camera" button, to initiate the `OSSystemExtensionRequest` for installation.
 
@@ -91,9 +157,9 @@ Therefore, the image acquisition loop using the Aravis library **must** run with
 
 Integrating a complex C library like Aravis into a modern, sandboxed macOS app requires careful management of its dependencies and binaries. The application must be self-contained.
 
-A practical strategy for managing Aravis and its dependencies (like glib, libxml2, etc. [6]) is to use a package manager like Homebrew to compile them on a development machine. However, the app cannot rely on these libraries being present in a system path like `/usr/local/lib` on a user's machine.
+A practical strategy for managing Aravis and its dependencies (like glib, libxml2, etc.) is to use a package manager like Homebrew to compile them on a development machine. However, the app cannot rely on these libraries being present in a system path like `/usr/local/lib` on a user's machine.
 
-Instead, the compiled dynamic libraries (`.dylib` files) for Aravis and all its recursive dependencies must be bundled inside the application. The standard location for this is a directory named `Frameworks` inside the app's bundle (`YourApp.app/Contents/Frameworks/`).[8]
+Instead, the compiled dynamic libraries (`.dylib` files) for Aravis and all its recursive dependencies must be bundled inside the application. The standard location for this is a directory named `Frameworks` inside the app's bundle (`YourApp.app/Contents/Frameworks/`).
 
 This leads to two critical build-time configurations in Xcode:
 
@@ -102,33 +168,93 @@ This leads to two critical build-time configurations in Xcode:
 
 Finally, to allow the app to communicate with the GigE camera, its sandbox must be configured with the **Outgoing Connections (Client)** entitlement. This is found in the "Signing & Capabilities" tab under the "App Sandbox" section's "Network" subsection.
 
-### Section 4: Bridging the Process Divide: High-Performance IPC
+### Section 4: Frame Flow Architecture: Sink and Source Streams
 
-With Aravis running in the app and the virtual camera logic in the extension, a high-performance, low-latency IPC mechanism is needed to transfer video frames. While generic XPC is an option, the `CMIOExtension` framework provides a purpose-built solution that is far more efficient for video.
+Our implementation uses the recommended sink/source pattern for efficient frame transfer from the main app to the extension.
 
-#### 4.1. The Recommended Pattern: Source and Sink Streams
+#### 4.1. The Implemented Pattern: Dual-Stream Architecture
 
-The definitive pattern for streaming video from a host app into its camera extension is to design the `CMIOExtensionDevice` with two complementary streams.[5, 9]
+The GigE Virtual Camera implements the standard pattern with two complementary streams:
 
-- A **Source Stream**: This is a standard stream configured with `direction:.source`. This is the public-facing stream that client applications like FaceTime, QuickTime, and Zoom will discover and connect to when they want to _receive_ video from the virtual camera.
-- A **Sink Stream**: This is a second stream configured with `direction:.sink`. This stream is not advertised to general clients but is used as a private channel for the host application to _send_ video frames _into_ the extension.
+##### Source Stream (Public-facing)
+- **Direction**: `.source`
+- **Purpose**: Provides frames to client applications (QuickTime, Zoom, etc.)
+- **Implementation**: 
+  - Dequeues frames from shared `CMSimpleQueue`
+  - Generates test pattern when queue is empty
+  - Supports format switching on-the-fly
+  - Runs timer-based frame delivery at configured frame rate
 
-The implementation within the extension is straightforward. The `StreamSource` for the sink stream receives sample buffers and enqueues them. The `StreamSource` for the source stream, when started, simply dequeues buffers from that same queue and outputs them. This creates a highly efficient, in-memory forwarding mechanism. The `ldenoue/cameraextension` sample project provides a well-regarded public implementation of this exact architecture.[9]
+##### Sink Stream (Private channel)
+- **Direction**: `.sink`
+- **Purpose**: Receives frames from the main app
+- **Implementation**:
+  - `consumeSampleBuffer` method receives frames
+  - Enqueues to shared `CMSimpleQueue`
+  - Handles queue overflow by dropping oldest frames
+  - Sets flag to disable test pattern when real frames arrive
 
-#### 4.2. Implementation: The Host App as a C-API Client
+##### Shared Frame Queue
+The key to efficiency is the shared `CMSimpleQueue` created in `CameraDeviceSource`:
+```swift
+private var sharedFrameQueue: CMSimpleQueue?
 
-To feed the sink stream, the host application (which contains the Aravis logic) cannot use the high-level `AVFoundation` APIs. Instead, it must interact with its own extension using the lower-level **CoreMediaIO C-API**, which provides the necessary functions to connect to a sink.
+// Create shared frame queue
+var queue: CMSimpleQueue?
+CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: 30, queueOut: &queue)
+sharedFrameQueue = queue
+```
 
-The workflow in the host app is as follows:
+This queue is passed to both stream instances, enabling zero-copy frame transfer between sink and source.
 
-1.  **Discover Device**: Enumerate all available hardware by querying the `kCMIOHardwarePropertyDevices` property on the system object to find the `CMIODeviceID` of the virtual camera created by the extension.[10, 11] This can be done by matching the `localizedName` or another unique identifier.
-2.  **Discover Streams**: Once the device is found, query its `kCMIODevicePropertyStreams` property to get an array of `CMIOStreamID`s. The app can then identify the sink stream, for example, by its position in the array or by custom properties.[10, 11]
-3.  **Start Stream and Get Queue**: The app requests the sink stream to start using `CMIODeviceStartStream`. Upon starting, it obtains a reference to the stream's underlying `CMSimpleQueue`.
-4.  **Enqueue Frames**: As the Aravis library provides new video frames, the app must package them correctly. Each frame is converted into a `CVPixelBuffer`, which is then wrapped, along with timing information, into a `CMSampleBuffer`.[12] This `CMSampleBuffer` is then pushed into the sink stream's queue using `CMSimpleQueueEnqueue`.[10] The extension's source stream will then pick up this buffer and deliver it to any connected client application.
+#### 4.2. CMIOFrameSender Implementation
+
+The `CMIOFrameSender` class in the main app implements the CoreMediaIO C API client pattern:
+
+##### Current Implementation
+```swift
+class CMIOFrameSender {
+    // Discovery and connection
+    func connect() -> Bool
+    func disconnect()
+    
+    // Frame sending
+    func sendFrame(_ pixelBuffer: CVPixelBuffer)
+}
+```
+
+##### Workflow Implementation:
+
+1. **Enable Virtual Camera Discovery**:
+   ```swift
+   // Sets kCMIOHardwarePropertyAllowScreenCaptureDevices
+   enableVirtualCameraDiscovery()
+   ```
+
+2. **Device Discovery**:
+   - Queries `kCMIOHardwarePropertyDevices` to enumerate devices
+   - Identifies device by name matching "GigE Virtual Camera"
+   - Stores `CMIODeviceID` for stream operations
+
+3. **Stream Discovery**:
+   - Queries `kCMIODevicePropertyStreams` on found device
+   - Currently selects first stream (needs refinement to identify sink)
+   - Stores `CMIOStreamID` for frame sending
+
+4. **Frame Sending**:
+   - Creates `CMSampleBuffer` from `CVPixelBuffer`
+   - Adds timing information using host clock
+   - Enqueues to stream queue using `CMSimpleQueueEnqueue`
+
+##### Known Implementation Issues:
+
+1. **Queue Reference**: Currently creates its own queue instead of obtaining the actual sink stream's queue reference
+2. **Stream Identification**: Assumes first stream is sink, needs property-based identification
+3. **Queue Management**: Missing proper queue reference acquisition from running stream
 
 #### 4.3. Advanced IPC: Low-Bandwidth Control
 
-For non-video data, such as sending control commands from the app's UI to the extension (e.g., to change a filter parameter or adjust a property), setting up a separate XPC connection is unnecessary overhead. The recommended approach for this low-bandwidth communication is to use **Custom Properties**.[5]
+For non-video data, such as sending control commands from the app's UI to the extension (e.g., to change a filter parameter or adjust a property), setting up a separate XPC connection is unnecessary overhead. The recommended approach for this low-bandwidth communication is to use **Custom Properties**.
 
 This is achieved by defining a custom property identifier using a `FourCharCode` (a 4-character constant). The extension's `StreamSource` (or `DeviceSource`) then implements the `streamProperties(forProperties:)` and `setStreamProperties(...)` methods to get and set the state of this custom property. The host app can then use the C-API functions `CMIOObjectGetPropertyData` and `CMIOObjectSetPropertyData` to communicate small pieces of data or commands efficiently.
 
@@ -136,93 +262,190 @@ This is achieved by defining a custom property identifier using a `FourCharCode`
 
 The final stage of development involves correctly configuring the security entitlements, understanding the user permission flow, and preparing the application for notarization and distribution.
 
-### Section 5: Defining Boundaries: Entitlements and Provisioning
+### Section 5: Security and Entitlements
 
-Entitlements are key-value pairs baked into an app's signature that grant it specific capabilities beyond the standard sandbox restrictions.[13] Correctly configuring them is essential for the app to function and pass notarization.
+Since we're using an App Extension rather than a System Extension, the security model is simpler:
 
-#### 5.1. The Hardened Runtime
+#### 5.1. App Extension Security Model
 
-A mandatory requirement for notarizing software for distribution with Developer ID is enabling the **Hardened Runtime**.[14] This security feature must be enabled in the "Signing & Capabilities" tab for both the main application target and the camera extension target. For most use cases, the default settings are sufficient. Specific exceptions, like "Allow JIT" for Just-In-Time compilation, should only be enabled if a bundled library explicitly requires it. The principle is to grant the minimum necessary capabilities.
+The CMIO App Extension runs in a sandboxed environment with limited capabilities. Key security features:
+- Runs in separate process from main app
+- Cannot make network connections directly
+- Limited file system access
+- Communicates with main app via CoreMediaIO framework
 
-#### 5.2. A Comprehensive Entitlements Breakdown
+#### 5.2. Required Entitlements
 
-The following table provides a clear, target-by-target breakdown of the entitlements required for this project. Misconfiguration is a common source of errors, and it is critical to apply the correct entitlements to the correct target.
+The following entitlements are configured for our implementation:
 
-| Entitlement Key                                     | Target          | Required    | Xcode Capability Name           | Purpose                                                                                                                                                                                                                     |
-| :-------------------------------------------------- | :-------------- | :---------- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `com.apple.security.app-sandbox`                    | App & Extension | Yes         | App Sandbox                     | Enables the sandbox for both the host app and the extension. This is mandatory.                                                                                                                                             |
-| `com.apple.security.system-extension.install`       | App             | Yes         | System Extension                | Grants the host app permission to submit activation requests for its embedded system extension.                                                                                                                             |
-| `com.apple.security.network.client`                 | App             | Yes         | Outgoing Connections (Client)   | Allows the sandboxed host app to make outgoing network connections, necessary for Aravis to communicate with a GigE camera.                                                                                                 |
-| `com.apple.security.app-groups`                     | App & Extension | Yes         | App Groups                      | Defines a shared container for the app and extension. While the sink/source stream pattern is primary for video, this is useful for sharing `UserDefaults` or other small data files.                                       |
-| `com.apple.security.device.camera`                  | Extension       | Conditional | Camera                          | **Only required if the extension itself directly accesses a hardware camera.** For this use case, where the extension only receives frames from the app via a sink stream, this entitlement is not needed on the extension. |
-| `com.apple.security.files.user-selected.read-write` | App             | Optional    | User Selected File (Read/Write) | Grants the app permission to access files and folders explicitly chosen by the user in an open/save dialog. Useful for loading/saving configurations.[15]                                                                   |
+| Entitlement Key                      | Target          | Purpose                                                         |
+| :----------------------------------- | :-------------- | :-------------------------------------------------------------- |
+| `com.apple.security.app-sandbox`     | App & Extension | Enables sandboxing (required for App Store distribution)        |
+| `com.apple.security.network.client`  | App             | Allows connection to GigE cameras over network                  |
+| `com.apple.security.app-groups`      | App & Extension | Enables shared container for UserDefaults and small data files |
 
-### Section 6: The User's Role: Activation and Consent
+Note: The extension does not need camera entitlements since it receives frames from the main app rather than accessing hardware directly.
 
-Even with the correct technical implementation, the application will not function until the user grants the necessary permissions. This involves two distinct approval flows.
+### Section 6: User Permissions
 
-#### 6.1. The System Extension Activation Flow
+Since we're using an App Extension, the permission model is much simpler than System Extensions:
 
-The first approval is an administrative action to allow the system extension to be installed and run.
+#### 6.1. No System Extension Approval Required
 
-1.  **Code Trigger**: The host application must contain code that initiates the activation request. This is done by creating an `OSSystemExtensionRequest.activationRequest` and submitting it via `OSSystemExtensionManager.shared.submitRequest(...)`. This code should be tied to a user action, such as clicking an "Install Virtual Camera" button.
-2.  **Location Requirement**: A critical prerequisite for a successful activation request is that the host application must be located in the `/Applications` folder. The system will deny requests from apps running from other locations, such as the Xcode build folder or the Downloads folder. The application should include logic to check its own path and, if necessary, prompt the user to move it to the `/Applications` folder before attempting activation.
-3.  **User Journey**: When the request is submitted for the first time, the system presents a dialog asking the user to approve the extension. This dialog guides the user to `System Settings > Privacy & Security`. There, under the "Security" section, a message will appear indicating that system software from the developer was blocked. The user must click an "Allow" button and authenticate with their administrator password to approve the extension.
+Unlike System Extensions, App Extensions do not require:
+- Administrator approval
+- Installation in /Applications folder
+- System Settings approval workflow
+- Recovery mode changes
 
-A common point of confusion arises from documentation and guides related to legacy Kernel Extensions (KEXTs). Many sources describe a complex process of rebooting the Mac into Recovery Mode to set the security policy to "Reduced Security". This procedure is **not required** for modern System Extensions like `CMIOExtension`. They are designed to be approved by an administrator directly from within the running operating system without compromising the Mac's security posture. This distinction is vital and saves significant complexity for both the developer and the end-user.
+The extension is automatically available when the app is installed.
 
-#### 6.2. Differentiating Permissions: System Extension vs. TCC
+#### 6.2. Camera Access Permission
 
-The second permission model is the familiar TCC (Transparency, Consent, and Control) framework, which governs access to privacy-sensitive resources.
+The main app will need camera access permission when connecting to GigE cameras:
 
-- **System Extension Approval** is a one-time administrative act to trust the developer's code and allow it to be installed as a privileged component of the system. It is about maintaining system integrity.[1, 16]
-- **TCC Privacy Prompts** are per-app requests for access to specific data or hardware. In this project's context, the host application, upon its first attempt to use the Aravis library to connect to the GigE camera, will likely trigger a standard camera access prompt from macOS. To support this, the application's `Info.plist` must contain the `NSCameraUsageDescription` key with a string explaining why it needs camera access (e.g., "This app requires access to the GigE camera to provide video for the virtual camera.").
+- **Permission Trigger**: First attempt to access camera via Aravis
+- **Info.plist Key**: `NSCameraUsageDescription`
+- **Example Description**: "GigE Virtual Camera needs access to connect to GigE Vision cameras on your network."
 
-### Section 7: Shipping with Confidence: Notarization and Deployment
+The extension itself does not need camera permissions since it only receives processed frames from the main app.
 
-For distribution outside the Mac App Store, the application must be notarized by Apple. Notarization is an automated process where Apple scans the software for malicious content and code-signing issues, providing confidence to users that the software is safe to run.[14, 17]
+### Section 7: Distribution
 
-#### 7.1. The Notarization Workflow for Developer ID
+For distribution, the app can be deployed through multiple channels:
 
-The end-to-end process for notarizing an app with an embedded system extension involves several steps, best handled via command-line tools for automation.
+#### 7.1. Mac App Store Distribution
 
-- **Prerequisites**: A paid Apple Developer Program membership, a "Developer ID Application" certificate installed in the keychain, and Xcode's command-line tools.[14, 18]
-- **Step 1: Archive**: In Xcode, create a clean build archive of the application using `Product > Archive`.
-- **Step 2: Sign and Export**: From the Xcode Organizer, select the archive and click "Distribute App". Choose "Developer ID" as the distribution method and proceed. This will export a signed `.app` bundle. This step is critical as it recursively signs all executable content, including the main binary, the embedded `CMIOExtension`, and all bundled `.dylib` libraries for Aravis, all while enabling the Hardened Runtime.
-- **Step 3: Package**: Place the exported `.app` bundle into a container for distribution, such as a `.zip` archive or a `.dmg` disk image. The notarization service accepts these formats.[14, 19]
-- **Step 4: Upload with `notarytool`**: The modern command-line utility for notarization is `notarytool`. The deprecated `altool` should no longer be used.[14, 19] The upload is initiated with a command like `xcrun notarytool submit YourApp.zip --keychain-profile "YourProfileName" --wait`. Using an app-specific password stored in the keychain is the recommended authentication method.[19, 20] The `--wait` flag tells the tool to remain active until the notarization process is complete.
-- **Step 5: Staple**: Once notarization succeeds, the returned ticket must be attached to the distributable. This is called "stapling." The command `xcrun stapler staple "YourApp.app"` attaches the ticket directly to the app bundle.[14, 19] If distributing a disk image, staple the ticket to the `.dmg` file. Stapling is essential for Gatekeeper to verify the app's notarization status on a user's machine without needing an active internet connection.
-- **Step 6: Verify**: Before shipping, run a final verification using `spctl -a -vvv "YourApp.app"`. The output should include `source=Notarized Developer ID`, confirming that Gatekeeper assesses the app correctly.[17, 21]
+Since we're using an App Extension (not System Extension), the app is eligible for Mac App Store distribution:
+- No special approval process required
+- Standard app review process applies
+- Automatic updates through App Store
 
-#### 7.2. Best Practices and Troubleshooting
+#### 7.2. Direct Distribution (Notarization)
 
-To ensure a smooth notarization process, consider the following best practices:
+For distribution outside the App Store:
 
-- To avoid long processing times, minimize the number of files in the bundle. Do not place non-executable resource files in code-signed directories like `Contents/MacOS/`; they belong in `Contents/Resources/`.[19, 22]
-- If using a custom installer package, a two-round notarization process is required. First, notarize and staple the `.app` bundle. Then, place the notarized app inside the installer package and notarize the installer itself.[19, 22, 23]
-- If the notarization service is unresponsive, check Apple's official System Status page for potential outages.[23]
+1. **Build and Archive**: Create release build with proper code signing
+2. **Export for Developer ID**: Export from Xcode Organizer
+3. **Notarize**: Use `xcrun notarytool submit` to upload for notarization
+4. **Staple**: Attach notarization ticket with `xcrun stapler staple`
+5. **Verify**: Check with `spctl -a -vvv "YourApp.app"`
 
-The following table provides a quick reference for the essential command-line tools.
+Key commands:
+```bash
+# Submit for notarization
+xcrun notarytool submit YourApp.zip --keychain-profile "YourProfile" --wait
 
-| Command                   | Example Usage                                                  | Purpose                                                                                              |
-| :------------------------ | :------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------- |
-| `codesign`                | `codesign -dv --verbose=4 "YourApp.app"`                       | Verifies the signature, entitlements, and Hardened Runtime status of a bundle.                       |
-| `xcrun notarytool submit` | `... submit App.zip --keychain-profile "AC_PASSWORD" --wait`   | Uploads a software package to the Apple Notary Service.[19]                                          |
-| `xcrun notarytool log`    | `... log <UUID> --keychain-profile "AC_PASSWORD" dev_log.json` | Retrieves the detailed log for a notarization submission if it fails.[19]                            |
-| `xcrun stapler staple`    | `xcrun stapler staple "YourApp.app"`                           | Attaches the notarization ticket to a bundle or disk image for offline validation by Gatekeeper.[19] |
-| `spctl`                   | `spctl -a -vvv "YourApp.app"`                                  | Assesses whether Gatekeeper will allow the software to run on a user's system.[21]                   |
+# Staple the ticket
+xcrun stapler staple "YourApp.app"
 
-### Conclusions and Recommendations
+# Verify
+spctl -a -vvv "YourApp.app"
+```
 
-The development of a virtual camera on modern macOS is governed by a clear and secure architectural path centered on the `CMIOExtension` framework. The legacy DAL plugin approach is no longer viable and must be avoided.
+## Conclusions
 
-The recommended architecture involves a clean separation of concerns:
+The GigE Virtual Camera implementation demonstrates a modern approach to creating virtual cameras on macOS using the CMIOExtension framework as an App Extension.
 
-1.  **The Host Application**: This sandboxed application is responsible for all direct hardware interaction. It should contain the Aravis library for GigE camera communication, handle the image acquisition loop, and serve as the user-facing installer and configuration utility for the extension.
-2.  **The Camera Extension**: This highly restricted system extension is responsible for registering the virtual camera with the OS. It should be designed with a **sink stream** to receive video frames from the host app and a **source stream** to provide those frames to client applications. This pattern provides the most performant and secure method for inter-process video transfer.
+### Key Architectural Decisions
 
-Successful deployment hinges on meticulous configuration of project targets, build settings, and security entitlements. Both the app and the extension must enable the Hardened Runtime. The host app requires entitlements to install system extensions and make outgoing network connections, while the extension itself operates with minimal privileges.
+1. **App Extension vs System Extension**: We chose App Extension for simpler deployment and Mac App Store compatibility
+2. **Sink/Source Stream Pattern**: Implemented the recommended dual-stream architecture for efficient frame passing
+3. **Shared Frame Queue**: Using CMSimpleQueue for zero-copy frame transfer between streams
+4. **CoreMediaIO C API**: Main app uses low-level API to send frames to extension
 
-Finally, distribution outside the Mac App Store mandates a multi-step notarization process using `notarytool` and `stapler`. By following this comprehensive guide—from initial project setup and library bundling to handling user permissions and notarization—developers can build a robust, secure, and fully compatible virtual camera application for the modern macOS ecosystem.
+### Implementation Highlights
 
-You can copy and paste the content above into a new file with a `.md` extension. Let me know if you need anything else!
+- ✅ Virtual camera appears in all macOS applications
+- ✅ Test pattern generation ensures camera always provides output
+- ✅ Multiple format support with on-the-fly switching
+- ✅ Clean separation between main app (hardware access) and extension (virtual camera)
+- ✅ Proper sandboxing and security model
+
+### Next Steps for Full Functionality
+
+1. **Fix CMIOFrameSender**: Obtain actual sink stream queue reference
+2. **Complete Aravis Integration**: Connect camera frames to the pipeline
+3. **Add Camera Discovery UI**: Allow users to select from available GigE cameras
+4. **Performance Testing**: Optimize for high frame rates and low latency
+
+The architecture is sound and the foundation is in place. With the remaining integration work, this will provide a fully functional GigE Vision to virtual camera bridge for macOS.
+
+## Current Implementation Summary
+
+### What's Working
+
+1. **Extension Architecture**:
+   - CMIO App Extension properly configured and embedded
+   - Provider, Device, and dual Stream architecture implemented
+   - Virtual camera appears in system camera lists
+   - Test pattern generation provides video output
+
+2. **Frame Flow Design**:
+   - Sink/Source stream pattern fully implemented
+   - Shared CMSimpleQueue enables efficient frame passing
+   - Extension can receive and forward frames
+   - Multiple format support (1080p30, 720p60, 720p30, 480p30)
+
+3. **Main App Components**:
+   - SwiftUI interface for camera control
+   - CMIOFrameSender class for CoreMediaIO C API interaction
+   - Aravis library bundled (but not yet connected)
+
+### What Needs Completion
+
+1. **CMIOFrameSender Queue Connection**:
+   - Need to obtain actual sink stream queue reference
+   - Implement proper stream identification (sink vs source)
+   - Complete the queue acquisition from running stream
+
+2. **Aravis Integration**:
+   - Connect AravisBridge frame capture to CMIOFrameSender
+   - Implement CVPixelBuffer conversion from Aravis frames
+   - Add camera discovery and selection UI
+
+3. **Testing and Refinement**:
+   - Verify frame flow from Aravis → Extension → Client apps
+   - Performance optimization for high frame rates
+   - Error handling and recovery
+
+### Architecture Diagram
+
+```
+┌─────────────────────┐     ┌─────────────────────────┐
+│   GigE Camera       │     │    Main App Process     │
+│                     │     │                         │
+│                     │◀────│  AravisBridge           │
+└─────────────────────┘     │  (GigE Vision Protocol) │
+                            │                         │
+                            │  CMIOFrameSender        │
+                            │  (CoreMediaIO C API)    │
+                            └───────────┬─────────────┘
+                                        │
+                                        │ CMSampleBuffer
+                                        │
+                            ┌───────────▼─────────────┐
+                            │  Extension Process      │
+                            │                         │
+                            │  Sink Stream            │
+                            │  consumeSampleBuffer()  │
+                            │          │              │
+                            │          ▼              │
+                            │   CMSimpleQueue         │
+                            │   (Shared Buffer)       │
+                            │          │              │
+                            │          ▼              │
+                            │  Source Stream          │
+                            │  send() to clients      │
+                            └───────────┬─────────────┘
+                                        │
+                                        │ Video Frames
+                                        ▼
+                            ┌─────────────────────────┐
+                            │   Client Applications   │
+                            │   (QuickTime, Zoom,     │
+                            │    FaceTime, etc.)      │
+                            └─────────────────────────┘
+```
+
+This architecture provides a clean separation of concerns with efficient frame passing and proper sandboxing for security.

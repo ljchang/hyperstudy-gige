@@ -12,12 +12,11 @@ fi
 
 APP_BUNDLE="$1"
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
-EXTENSION_PATH="$APP_BUNDLE/Contents/PlugIns/GigECameraExtension.appex"
-EXTENSION_FRAMEWORKS_DIR="$EXTENSION_PATH/Contents/Frameworks"
+# Extension doesn't need Aravis libraries anymore
+# EXTENSION_PATH="$APP_BUNDLE/Contents/PlugIns/GigECameraExtension.appex"
 
-# Create Frameworks directories
+# Create Frameworks directory (only for main app)
 mkdir -p "$FRAMEWORKS_DIR"
-mkdir -p "$EXTENSION_FRAMEWORKS_DIR"
 
 # Function to copy library and its dependencies
 copy_library_and_deps() {
@@ -54,14 +53,12 @@ GLIB_LIB=$(find /opt/homebrew/lib -name "libglib-2.0*.dylib" | head -1)
 GOBJECT_LIB=$(find /opt/homebrew/lib -name "libgobject-2.0*.dylib" | head -1)
 GIO_LIB=$(find /opt/homebrew/lib -name "libgio-2.0*.dylib" | head -1)
 
-# Copy libraries to both app and extension
+# Copy libraries to app only (extension doesn't need them)
 for lib in "$ARAVIS_LIB" "$GLIB_LIB" "$GOBJECT_LIB" "$GIO_LIB"; do
     copy_library_and_deps "$lib" "$FRAMEWORKS_DIR"
-    copy_library_and_deps "$lib" "$EXTENSION_FRAMEWORKS_DIR"
 done
 
-# Update library paths in the extension binary
-EXTENSION_BINARY="$EXTENSION_PATH/Contents/MacOS/GigECameraExtension"
+# Update library paths in the app binary
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/GigEVirtualCamera"
 
 echo "Updating library paths..."
@@ -72,7 +69,7 @@ update_library_paths() {
     local frameworks_rel_path="$2"
     
     # Get all libraries in Frameworks
-    for lib in "$FRAMEWORKS_DIR"/*.dylib "$EXTENSION_FRAMEWORKS_DIR"/*.dylib; do
+    for lib in "$FRAMEWORKS_DIR"/*.dylib; do
         if [ -f "$lib" ]; then
             local lib_name=$(basename "$lib")
             local old_path=$(otool -L "$binary" 2>/dev/null | grep "$lib_name" | awk '{print $1}' | head -1)
@@ -92,37 +89,23 @@ for lib in "$FRAMEWORKS_DIR"/*.dylib; do
     fi
 done
 
-for lib in "$EXTENSION_FRAMEWORKS_DIR"/*.dylib; do
-    if [ -f "$lib" ]; then
-        update_library_paths "$lib" "../Frameworks"
-    fi
-done
+# Extension no longer needs Aravis libraries
 
-# Update paths in binaries and debug dylibs
-EXTENSION_DEBUG_DYLIB="$EXTENSION_PATH/Contents/MacOS/GigECameraExtension.debug.dylib"
+# Update paths in app debug dylib
 APP_DEBUG_DYLIB="$APP_BUNDLE/Contents/MacOS/GigEVirtualCamera.debug.dylib"
-
-if [ -f "$EXTENSION_DEBUG_DYLIB" ]; then
-    echo "Updating paths in extension debug dylib..."
-    update_library_paths "$EXTENSION_DEBUG_DYLIB" "../Frameworks"
-fi
 
 if [ -f "$APP_DEBUG_DYLIB" ]; then
     echo "Updating paths in app debug dylib..."
     update_library_paths "$APP_DEBUG_DYLIB" "../Frameworks"
 fi
 
-update_library_paths "$EXTENSION_BINARY" "../Frameworks"
 update_library_paths "$APP_BINARY" "../Frameworks"
 
 echo "Library bundling complete!"
 
 # Verify
-echo -e "\nVerifying library paths in extension:"
-otool -L "$EXTENSION_BINARY" | grep -E "(aravis|glib|gio|gobject)" || echo "No Aravis libraries linked"
+echo -e "\nVerifying library paths in app:"
+otool -L "$APP_BINARY" | grep -E "(aravis|glib|gio|gobject)" || echo "No Aravis libraries linked"
 
 echo -e "\nLibraries in app Frameworks:"
 ls -la "$FRAMEWORKS_DIR"/*.dylib 2>/dev/null || echo "No libraries found"
-
-echo -e "\nLibraries in extension Frameworks:"
-ls -la "$EXTENSION_FRAMEWORKS_DIR"/*.dylib 2>/dev/null || echo "No libraries found"

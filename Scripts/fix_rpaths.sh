@@ -12,7 +12,7 @@ fi
 
 APP_BUNDLE="$1"
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
-EXTENSION_PATH="$APP_BUNDLE/Contents/PlugIns/GigECameraExtension.appex"
+EXTENSION_PATH="$APP_BUNDLE/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
 EXTENSION_FRAMEWORKS_DIR="$EXTENSION_PATH/Contents/Frameworks"
 
 echo "Fixing rpaths and library paths..."

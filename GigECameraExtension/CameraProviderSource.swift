@@ -32,7 +32,7 @@ class CameraProviderSource: NSObject, CMIOExtensionProviderSource {
         do {
             try provider.addDevice(deviceSource!.device)
             logger.info("Virtual camera device added successfully during initialization")
-            logger.info("Device ID: \(deviceSource!.device.deviceID)")
+            logger.info("Device ID: \(self.deviceSource!.device.deviceID)")
         } catch {
             logger.error("Failed to add device during initialization: \(error.localizedDescription)")
         }

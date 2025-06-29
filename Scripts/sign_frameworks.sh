@@ -17,9 +17,9 @@ if [ -d "${FRAMEWORKS_PATH}" ]; then
         codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --preserve-metadata=identifier,entitlements,flags --timestamp "${dylib}"
     done
     
-    # Sign the app bundle
+    # Sign the app bundle (excluding the already-signed extension)
     echo "Re-signing app bundle..."
-    codesign --force --deep --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --entitlements "${CODE_SIGN_ENTITLEMENTS}" --timestamp "${APP_PATH}"
+    codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --entitlements "${CODE_SIGN_ENTITLEMENTS}" --timestamp "${APP_PATH}"
     
     echo "Framework signing complete"
 else

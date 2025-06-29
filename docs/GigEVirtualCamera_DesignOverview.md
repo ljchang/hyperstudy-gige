@@ -11,14 +11,22 @@ This document describes the architecture and implementation of the GigE Virtual 
 - ✅ **Frame flow from main app to extension** - Using CoreMediaIO C API
 - ✅ **Test pattern generation** - Extension generates test patterns when no frames available
 - ✅ **Multiple format support** - 1080p30, 720p60, 720p30, 480p30
+- ✅ **Developer ID signing and notarization** - App properly signed and notarized for distribution
+- ✅ **Build automation** - Scripts for building, signing, and notarizing
 - ⚠️ **Aravis integration** - Library bundled but frame sending not yet connected
 - ⚠️ **CMIOFrameSender** - Implemented but queue connection needs refinement
+- ❌ **Extension not loading** - Despite proper signing/notarization, extension doesn't appear in system
 
 ### Known Issues
 
-1. **Frame Queue Connection**: The CMIOFrameSender creates its own queue instead of obtaining the actual sink stream's queue
-2. **Stream Discovery**: Need to properly identify sink vs source streams during discovery
-3. **Aravis Frame Flow**: The pipeline from Aravis → CVPixelBuffer → CMIOFrameSender is not yet connected
+1. **Extension Loading Failure**: The CMIO extension is not being discovered or loaded by macOS, even after:
+   - Proper code signing with Developer ID certificate
+   - Successful notarization
+   - Adding required camera entitlements
+   - Correct Info.plist configuration
+2. **Frame Queue Connection**: The CMIOFrameSender creates its own queue instead of obtaining the actual sink stream's queue
+3. **Stream Discovery**: Need to properly identify sink vs source streams during discovery
+4. **Aravis Frame Flow**: The pipeline from Aravis → CVPixelBuffer → CMIOFrameSender is not yet connected
 
 ## Part I: Foundational Architecture and Project Setup
 
@@ -331,17 +339,25 @@ For distribution outside the App Store:
 4. **Staple**: Attach notarization ticket with `xcrun stapler staple`
 5. **Verify**: Check with `spctl -a -vvv "YourApp.app"`
 
-Key commands:
+We've implemented automated scripts for this process:
 ```bash
-# Submit for notarization
-xcrun notarytool submit YourApp.zip --keychain-profile "YourProfile" --wait
+# Setup Apple credentials (one-time)
+./Scripts/setup_notarization.sh
 
-# Staple the ticket
-xcrun stapler staple "YourApp.app"
+# Build and notarize release version
+./Scripts/build_release.sh
+./Scripts/notarize.sh
 
-# Verify
-spctl -a -vvv "YourApp.app"
+# Test the virtual camera
+./Scripts/test_virtual_camera.sh
 ```
+
+The notarization script automatically:
+- Creates a ZIP archive of the app
+- Submits to Apple for notarization
+- Waits for completion (typically 1-3 minutes)
+- Staples the ticket to the app
+- Verifies the notarization
 
 ## Conclusions
 

@@ -18,11 +18,13 @@ class CMIOFrameSender: NSObject {
     // CMIO device and stream IDs
     private var deviceID: CMIODeviceID?
     private var sinkStreamID: CMIOStreamID?
-    private var streamQueue: Unmanaged<CMSimpleQueue>?
+    private var streamQueue: CMSimpleQueue?
     
     // State tracking
     private var isConnected = false
     private var frameCount: UInt64 = 0
+    private var lastQueueCheckTime = Date()
+    private var queueInvalidCount = 0
     
     // MARK: - Initialization
     
@@ -38,9 +40,15 @@ class CMIOFrameSender: NSObject {
     func connect() -> Bool {
         logger.info("Attempting to connect to virtual camera...")
         
+        // Give the system a moment to register the extension
+        Thread.sleep(forTimeInterval: 0.5)
+        
         // Find our virtual camera device
         guard let device = findVirtualCamera() else {
+            print("[CMIOFrameSender] ❌ Virtual camera device not found")
             logger.error("Virtual camera device not found")
+            logger.error("Make sure the extension is running and the virtual camera is registered")
+            logger.info("========================================")
             return false
         }
         
@@ -70,27 +78,12 @@ class CMIOFrameSender: NSObject {
     func disconnect() {
         guard isConnected else { return }
         
-        if let deviceID = deviceID, let streamID = sinkStreamID {
-            // Stop the stream
-            var propertyAddress = CMIOObjectPropertyAddress(
-                mSelector: CMIOObjectPropertySelector(kCMIOStreamPropertyCanProcessDeckCommand),
-                mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeWildcard),
-                mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementWildcard)
-            )
-            
-            var isRunning: UInt32 = 0
-            var dataSize = UInt32(MemoryLayout<UInt32>.size)
-            
-            CMIOObjectSetPropertyData(
-                streamID,
-                &propertyAddress,
-                0,
-                nil,
-                dataSize,
-                &isRunning
-            )
-            
-            CMIODeviceStopStream(deviceID, streamID)
+        // For sink streams, we don't stop the stream - the client controls that
+        // We just release our references
+        
+        if streamQueue != nil {
+            // Release the queue
+            logger.info("Releasing stream queue")
         }
         
         streamQueue = nil
@@ -102,15 +95,48 @@ class CMIOFrameSender: NSObject {
     }
     
     func sendFrame(_ pixelBuffer: CVPixelBuffer) {
-        guard isConnected, let queue = streamQueue?.takeUnretainedValue() else {
+        guard self.isConnected else {
+            if frameCount % 30 == 0 {
+                logger.warning("Cannot send frame: not connected")
+            }
             return
         }
         
-        // Create timing info
-        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        // Check if we need to refresh the queue periodically
+        // This helps when Photo Booth starts streaming after our initial connection
+        if streamQueue == nil || (Date().timeIntervalSince(lastQueueCheckTime) > 2.0) {
+            logger.info("Attempting to refresh stream queue...")
+            if refreshStreamQueue() {
+                logger.info("✅ Successfully refreshed stream queue!")
+                queueInvalidCount = 0
+                lastQueueCheckTime = Date()
+            }
+        }
+        
+        guard let queue = self.streamQueue else {
+            return
+        }
+        
+        // Verify IOSurface backing
+        guard let ioSurface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else {
+            logger.error("⚠️ Pixel buffer does not have IOSurface backing! This will fail cross-process sharing.")
+            return
+        }
+        
+        let surfaceID = IOSurfaceGetID(ioSurface)
+        
+        // Log first frame and every 30th frame with details
+        if frameCount == 0 || frameCount % 30 == 0 {
+            let width = CVPixelBufferGetWidth(pixelBuffer)
+            let height = CVPixelBufferGetHeight(pixelBuffer)
+            let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
+            logger.info("📤 Sending frame #\(self.frameCount) to sink stream: \(width)x\(height), format: \(format), IOSurface ID: \(surfaceID)")
+        }
+        
+        // Create timing info - IMPORTANT: Create fresh timing for each frame
         var timingInfo = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: now,
+            duration: .invalid,
+            presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
             decodeTimeStamp: .invalid
         )
         
@@ -142,28 +168,61 @@ class CMIOFrameSender: NSObject {
             return
         }
         
-        // Check if queue is full
-        if CMSimpleQueueGetCount(queue) >= CMSimpleQueueGetCapacity(queue) - 1 {
-            logger.warning("Frame queue full, dropping oldest frame")
-            _ = CMSimpleQueueDequeue(queue)
-        }
+        // Enqueue using the proper CMIO API
+        // The queue expects the element to be a retained CMSampleBuffer
+        // We use passUnretained and let the queue retain it
+        let samplePtr = Unmanaged.passUnretained(sample).toOpaque()
+        let result = CMSimpleQueueEnqueue(queue, element: samplePtr)
         
-        // Enqueue the frame
-        let retained = Unmanaged.passRetained(sample as AnyObject).toOpaque()
-        let result = CMSimpleQueueEnqueue(queue, element: retained)
         if result == noErr {
             frameCount += 1
-            if frameCount % 30 == 0 {
-                logger.debug("Sent frame #\(self.frameCount)")
+            queueInvalidCount = 0  // Reset error count on success
+            if frameCount == 1 {
+                print("[CMIOFrameSender] ✅ Successfully enqueued first frame to sink stream!")
+                logger.info("✅ Successfully enqueued first frame to sink stream!")
+                logger.info("Queue status after enqueue: count=\(CMSimpleQueueGetCount(queue)), capacity=\(CMSimpleQueueGetCapacity(queue))")
+            } else if frameCount % 30 == 0 {
+                print("[CMIOFrameSender] 📤 Sent frame #\(self.frameCount) to sink stream")
+                logger.info("📤 Sent frame #\(self.frameCount) to sink stream")
+                logger.info("Queue status: count=\(CMSimpleQueueGetCount(queue))")
             }
         } else {
-            logger.error("Failed to enqueue frame: \(result)")
+            queueInvalidCount += 1
+            if queueInvalidCount == 1 || queueInvalidCount == 5 || queueInvalidCount % 30 == 0 {
+                logger.error("Failed to enqueue frame: \(result) (error count: \(self.queueInvalidCount))")
+            }
+            
+            // Try to refresh on -12773 error, but not too frequently
+            if result == -12773 {
+                let timeSinceLastCheck = Date().timeIntervalSince(lastQueueCheckTime)
+                if queueInvalidCount == 1 || timeSinceLastCheck > 1.0 {
+                    logger.error("Queue appears to be invalid, will try to refresh")
+                    // Try to refresh the queue
+                    logger.info("Attempting queue refresh...")
+                    lastQueueCheckTime = Date()
+                    if refreshStreamQueue() {
+                        logger.info("✅ Queue refresh successful!")
+                        queueInvalidCount = 0
+                        // The next frame will use the refreshed queue
+                    } else {
+                        logger.error("❌ Queue refresh failed")
+                        streamQueue = nil  // Force re-obtain on next frame
+                    }
+                }
+            }
         }
     }
     
     // MARK: - Private Methods
     
+    private func listAllDevices() {
+        // Removed - too verbose for normal operation
+    }
+    
     private func enableVirtualCameraDiscovery() {
+        logger.info("Enabling virtual camera discovery...")
+        
+        // Enable screen capture devices (this also enables virtual cameras)
         var property = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyAllowScreenCaptureDevices),
             mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
@@ -171,7 +230,7 @@ class CMIOFrameSender: NSObject {
         )
         
         var allow: UInt32 = 1
-        CMIOObjectSetPropertyData(
+        let result = CMIOObjectSetPropertyData(
             CMIOObjectID(kCMIOObjectSystemObject),
             &property,
             0,
@@ -179,9 +238,17 @@ class CMIOFrameSender: NSObject {
             UInt32(MemoryLayout<UInt32>.size),
             &allow
         )
+        
+        if result == kCMIOHardwareNoError {
+            logger.info("Virtual camera discovery enabled successfully")
+        } else {
+            logger.warning("Failed to enable virtual camera discovery: \(result)")
+        }
     }
     
     private func findVirtualCamera() -> CMIODeviceID? {
+        logger.info("Starting device discovery...")
+        
         var propertyAddress = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
             mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
@@ -205,7 +272,14 @@ class CMIOFrameSender: NSObject {
             return nil
         }
         
+        guard dataSize > 0 else {
+            logger.error("Device list size is 0 - no devices found")
+            return nil
+        }
+        
         let deviceCount = Int(dataSize) / MemoryLayout<CMIODeviceID>.size
+        logger.info("Found \(deviceCount) total devices in system")
+        
         var devices = Array<CMIODeviceID>(repeating: 0, count: deviceCount)
         
         result = CMIOObjectGetPropertyData(
@@ -225,12 +299,15 @@ class CMIOFrameSender: NSObject {
         
         // Find our device by name
         for device in devices {
-            if let name = getDeviceName(deviceID: device),
-               name.contains("GigE Virtual Camera") {
-                return device
+            if let name = getDeviceName(deviceID: device) {
+                if name == "GigE Virtual Camera" || name.contains("GigE") {
+                    logger.info("Found virtual camera: \(name)")
+                    return device
+                }
             }
         }
         
+        logger.error("GigE Virtual Camera not found among \(deviceCount) devices")
         return nil
     }
     
@@ -252,7 +329,15 @@ class CMIOFrameSender: NSObject {
             &dataSize
         )
         
-        guard result == kCMIOHardwareNoError else { return nil }
+        guard result == kCMIOHardwareNoError else { 
+            logger.error("Failed to get name size for device \(deviceID): \(result)")
+            return nil 
+        }
+        
+        guard dataSize > 0 else {
+            logger.error("Name size is 0 for device \(deviceID)")
+            return nil
+        }
         
         var name: CFString = "" as CFString
         let nameResult = CMIOObjectGetPropertyData(
@@ -265,12 +350,18 @@ class CMIOFrameSender: NSObject {
             &name
         )
         
-        guard nameResult == kCMIOHardwareNoError else { return nil }
+        guard nameResult == kCMIOHardwareNoError else { 
+            logger.error("Failed to get name for device \(deviceID): \(nameResult)")
+            return nil 
+        }
         
-        return name as String
+        let nameString = name as String
+        logger.debug("Got device name: '\(nameString)' for device \(deviceID)")
+        return nameString
     }
     
     private func findSinkStream(deviceID: CMIODeviceID) -> CMIOStreamID? {
+        logger.info("Looking for sink stream on device \(deviceID)")
         var propertyAddress = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyStreams),
             mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
@@ -318,6 +409,7 @@ class CMIOFrameSender: NSObject {
         }
         
         // Find the sink stream by checking direction
+        logger.info("Checking \(streamCount) streams for sink stream...")
         for streamID in streams {
             var directionAddress = CMIOObjectPropertyAddress(
                 mSelector: CMIOObjectPropertySelector(kCMIOStreamPropertyDirection),
@@ -354,9 +446,13 @@ class CMIOFrameSender: NSObject {
     }
     
     private func startStreamAndGetQueue() -> Bool {
-        guard let deviceID = deviceID, let streamID = sinkStreamID else {
+        guard let _ = deviceID, let streamID = sinkStreamID else {
+            logger.error("Cannot get stream queue: deviceID=\(String(describing: self.deviceID)), streamID=\(String(describing: self.sinkStreamID))")
             return false
         }
+        
+        logger.info("Getting buffer queue for sink stream \(streamID)...")
+        logger.info("NOTE: For sink streams, we don't start the stream - the client (Photo Booth) does that")
         
         // Get the stream's queue using CMIOStreamCopyBufferQueue
         var queue: Unmanaged<CMSimpleQueue>?
@@ -364,34 +460,72 @@ class CMIOFrameSender: NSObject {
             streamID,
             { (streamID, token, refCon) in
                 // This callback is invoked when the queue state changes
-                // We don't need to handle it for simple enqueuing
+                // Note: Can't capture self in C callback, so just log
+                print("[CMIOFrameSender] Queue state changed for stream \(streamID)")
             },
             nil,
             &queue
         )
         
         guard queueResult == kCMIOHardwareNoError else {
-            logger.error("Failed to get stream queue: \(queueResult)")
+            logger.error("Failed to get stream queue: \(queueResult) (kCMIOHardwareNoError=\(kCMIOHardwareNoError))")
+            logger.error("This usually means the stream doesn't have a queue or isn't a sink stream")
+            logger.error("Make sure Photo Booth or another client has the camera selected")
             return false
         }
         
-        guard let q = queue else {
-            logger.error("Stream queue is nil")
+        guard let unmanagedQueue = queue else {
+            logger.error("Stream queue is nil after successful result")
             return false
         }
         
-        streamQueue = q
-        logger.info("Successfully obtained stream queue")
+        // Take a retained reference since CMSimpleQueue uses reference counting
+        streamQueue = unmanagedQueue.takeRetainedValue()
+        logger.info("✅ Successfully obtained stream queue")
         
-        // Start the stream
-        let result = CMIODeviceStartStream(deviceID, streamID)
-        guard result == kCMIOHardwareNoError else {
-            logger.error("Failed to start stream: \(result)")
-            streamQueue = nil
+        // For sink streams, we don't start the stream ourselves
+        // The client (Photo Booth) starts it when they begin capturing
+        logger.info("✅ Ready to send frames to sink stream (waiting for client to start stream)")
+        return true
+    }
+    
+    private func refreshStreamQueue() -> Bool {
+        guard let streamID = sinkStreamID else {
+            logger.error("No sink stream ID available")
             return false
         }
         
-        logger.info("Stream started successfully")
+        // Release old queue if any
+        streamQueue = nil
+        
+        // Try to get the queue again
+        var queue: Unmanaged<CMSimpleQueue>?
+        let queueResult = CMIOStreamCopyBufferQueue(
+            streamID,
+            { (streamID, token, refCon) in
+                print("[CMIOFrameSender] Queue state changed for stream \(streamID)")
+            },
+            nil,
+            &queue
+        )
+        
+        guard queueResult == kCMIOHardwareNoError else {
+            logger.error("Failed to refresh stream queue: \(queueResult)")
+            if queueResult == -12782 { // kCMIOHardwareIllegalOperationError
+                logger.error("Stream may not be running - ensure Photo Booth has started streaming")
+            } else if queueResult == -12783 { // kCMIOHardwareBadStreamError
+                logger.error("Bad stream - stream ID may be invalid")
+            }
+            return false
+        }
+        
+        guard let unmanagedQueue = queue else {
+            logger.error("Queue is nil even though result was success")
+            return false
+        }
+        
+        streamQueue = unmanagedQueue.takeRetainedValue()
+        logger.info("Successfully refreshed stream queue")
         return true
     }
 }

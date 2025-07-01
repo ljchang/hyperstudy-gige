@@ -26,6 +26,8 @@ xcodebuild -project GigEVirtualCamera.xcodeproj -scheme GigECameraApp -configura
 ./Scripts/build_release.sh
 ```
 
+**IMPORTANT**: DO NOT run `xcodegen` as it breaks the manual provision profile settings. Use the existing project file and build directly.
+
 ### Installing and Testing
 
 ```bash
@@ -132,6 +134,14 @@ system_profiler SPCameraDataType | grep "GigE Virtual Camera"
 open -a "QuickTime Player"
 # File → New Movie Recording → Select "GigE Virtual Camera"
 ```
+
+#### Using the Test Camera
+
+When no real GigE camera is available:
+1. Launch the app
+2. Select "Test Camera (Aravis Simulator)" from the dropdown
+3. Click Connect and Start Streaming
+4. The app uses Aravis's built-in fake camera for testing
 
 ### Common Issues and Solutions
 

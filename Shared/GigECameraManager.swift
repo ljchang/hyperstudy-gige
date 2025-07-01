@@ -29,6 +29,7 @@ class GigECameraManager: NSObject, ObservableObject {
     private var connectionRetryCount = 0
     private var frameDistributionCount = 0
     
+    
     override init() {
         super.init()
         aravisBridge.delegate = self
@@ -39,14 +40,52 @@ class GigECameraManager: NSObject, ObservableObject {
     
     func discoverCameras() {
         print("GigECameraManager: Starting camera discovery...")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        print("GigECameraManager: Current thread: \(Thread.current)")
+        print("GigECameraManager: AravisBridge instance: \(aravisBridge)")
+        
+        let workItem = DispatchWorkItem(block: { [weak self] in
+            print("GigECameraManager: Calling AravisBridge.discoverCameras()...")
             let cameras = AravisBridge.discoverCameras()
-            print("GigECameraManager: Found \(cameras.count) cameras")
+            print("GigECameraManager: AravisBridge returned \(cameras.count) cameras")
+            
+            if cameras.isEmpty {
+                print("GigECameraManager: No cameras found. Checking if Aravis is initialized...")
+                // Try a direct arv-tool check
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/arv-tool-0.8")
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    if let output = String(data: data, encoding: .utf8) {
+                        print("GigECameraManager: arv-tool output: \(output)")
+                    }
+                } catch {
+                    print("GigECameraManager: Failed to run arv-tool: \(error)")
+                }
+            }
+            
             for camera in cameras {
                 print("  - \(camera.name) at \(camera.ipAddress)")
             }
+            
+            // Always add a fake camera option
+            var allCameras = cameras
+            let fakeCamera = AravisCamera(
+                deviceId: "aravis-fake-camera",
+                name: "Test Camera (Aravis Simulator)",
+                modelName: "Aravis Fake GV Camera",
+                ipAddress: "127.0.0.1"
+            )
+            allCameras.append(fakeCamera)
+            print("  - \(fakeCamera.name) (Virtual)")
+            
             DispatchQueue.main.async {
-                self?.availableCameras = cameras
+                self?.availableCameras = allCameras
                 
                 // Post notification about discovered cameras
                 NotificationCenter.default.post(name: NSNotification.Name("GigECamerasDiscovered"), object: nil)
@@ -57,16 +96,46 @@ class GigECameraManager: NSObject, ObservableObject {
                     self?.connect(to: firstCamera)
                 }
             }
-        }
+        })
+        
+        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
     
     // MARK: - Connection
     
     func connect(to camera: AravisCamera) {
-        guard aravisBridge.connect(to: camera) else {
-            return
+        // Check if this is the fake camera
+        if camera.deviceId == "aravis-fake-camera" {
+            print("GigECameraManager: Starting fake camera for connection...")
+            
+            // Start the fake camera
+            if AravisBridge.startFakeCamera() {
+                // Now discover and connect to the actual fake camera
+                let cameras = AravisBridge.discoverCameras()
+                if let fakeCamera = cameras.first(where: { $0.modelName.contains("Fake") || $0.deviceId.contains("Fake") }) {
+                    print("GigECameraManager: Found running fake camera, connecting...")
+                    guard aravisBridge.connect(to: fakeCamera) else {
+                        print("GigECameraManager: Failed to connect to fake camera")
+                        AravisBridge.stopFakeCamera()
+                        return
+                    }
+                    currentCamera = camera // Keep the UI camera reference
+                } else {
+                    print("GigECameraManager: Fake camera started but not found in discovery")
+                    AravisBridge.stopFakeCamera()
+                    return
+                }
+            } else {
+                print("GigECameraManager: Failed to start fake camera")
+                return
+            }
+        } else {
+            // Normal camera connection
+            guard aravisBridge.connect(to: camera) else {
+                return
+            }
+            currentCamera = camera
         }
-        currentCamera = camera
     }
     
     func connectToIP(_ ipAddress: String) {
@@ -76,6 +145,12 @@ class GigECameraManager: NSObject, ObservableObject {
     }
     
     func disconnect() {
+        // Stop fake camera if it was running
+        if currentCamera?.deviceId == "aravis-fake-camera" {
+            print("GigECameraManager: Stopping fake camera...")
+            AravisBridge.stopFakeCamera()
+        }
+        
         aravisBridge.disconnect()
         currentCamera = nil
     }

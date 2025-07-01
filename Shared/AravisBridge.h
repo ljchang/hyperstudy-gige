@@ -10,6 +10,8 @@
 
 #import <Foundation/Foundation.h>
 #import <CoreVideo/CoreVideo.h>
+#import <AppKit/AppKit.h>
+#import <SystemExtensions/SystemExtensions.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +38,11 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 @property (nonatomic, readonly) NSString *modelName;
 @property (nonatomic, readonly) NSString *deviceId;
 @property (nonatomic, readonly) NSString *ipAddress;
+
+- (instancetype)initWithDeviceId:(NSString *)deviceId 
+                            name:(NSString *)name 
+                       modelName:(NSString *)modelName 
+                       ipAddress:(NSString *)ipAddress;
 @end
 
 @interface AravisBridge : NSObject
@@ -46,6 +53,11 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 
 // Discovery
 + (NSArray<AravisCamera *> *)discoverCameras;
+
+// Fake camera management
++ (BOOL)startFakeCamera;
++ (void)stopFakeCamera;
++ (BOOL)isFakeCameraRunning;
 
 // Connection
 - (BOOL)connectToCamera:(AravisCamera *)camera;

@@ -7,6 +7,8 @@
 
 #import "AravisBridge.h"
 #import <dispatch/dispatch.h>
+#import <IOSurface/IOSurface.h>
+#import "GigEVirtualCamera-Swift.h"
 
 extern "C" {
 #include <arv.h>
@@ -45,6 +47,43 @@ extern "C" {
 @end
 
 @implementation AravisBridge
+
+// Helper function to create IOSurface-backed pixel buffer
+static CVPixelBufferRef CreateIOSurfaceBackedPixelBuffer(size_t width, size_t height, OSType pixelFormat) {
+    // Create IOSurface properties
+    NSDictionary *ioSurfaceProps = @{
+        (__bridge NSString *)kIOSurfaceIsGlobal: @YES
+    };
+    
+    // Create pixel buffer attributes with IOSurface backing
+    NSDictionary *pixelBufferAttributes = @{
+        (__bridge NSString *)kCVPixelBufferWidthKey: @(width),
+        (__bridge NSString *)kCVPixelBufferHeightKey: @(height),
+        (__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(pixelFormat),
+        (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: ioSurfaceProps
+    };
+    
+    CVPixelBufferRef pixelBuffer = NULL;
+    CVReturn result = CVPixelBufferCreate(kCFAllocatorDefault,
+                                         width,
+                                         height,
+                                         pixelFormat,
+                                         (__bridge CFDictionaryRef)pixelBufferAttributes,
+                                         &pixelBuffer);
+    
+    if (result != kCVReturnSuccess) {
+        NSLog(@"AravisBridge: Failed to create IOSurface-backed pixel buffer: %d", result);
+        return NULL;
+    }
+    
+    // Verify IOSurface backing
+    IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixelBuffer);
+    if (!surface) {
+        NSLog(@"AravisBridge: Warning: Pixel buffer does not have IOSurface backing!");
+    }
+    
+    return pixelBuffer;
+}
 
 - (instancetype)init {
     self = [super init];
@@ -95,6 +134,53 @@ extern "C" {
     
     NSLog(@"AravisBridge: Returning %lu cameras", (unsigned long)cameras.count);
     return cameras;
+}
+
+#pragma mark - Fake Camera Management
+
+static ArvGvFakeCamera *_fakeCameraInstance = NULL;
+
++ (BOOL)startFakeCamera {
+    if (_fakeCameraInstance != NULL) {
+        NSLog(@"AravisBridge: Fake camera already running");
+        return YES;
+    }
+    
+    NSLog(@"AravisBridge: Starting Aravis fake camera...");
+    
+    // Create fake camera on loopback interface
+    _fakeCameraInstance = arv_gv_fake_camera_new("127.0.0.1", "FakeCamera001");
+    
+    if (_fakeCameraInstance != NULL) {
+        // The fake camera starts automatically when created
+        NSLog(@"AravisBridge: ✅ Fake camera started successfully");
+        
+        // Give it a moment to initialize
+        usleep(100000); // 100ms
+        
+        // Update device list to include the fake camera
+        arv_update_device_list();
+        return YES;
+    } else {
+        NSLog(@"AravisBridge: ❌ Failed to create fake camera");
+        return NO;
+    }
+}
+
++ (void)stopFakeCamera {
+    if (_fakeCameraInstance != NULL) {
+        NSLog(@"AravisBridge: Stopping fake camera...");
+        g_object_unref(_fakeCameraInstance);
+        _fakeCameraInstance = NULL;
+        
+        // Update device list to remove the fake camera
+        arv_update_device_list();
+        NSLog(@"AravisBridge: Fake camera stopped");
+    }
+}
+
++ (BOOL)isFakeCameraRunning {
+    return _fakeCameraInstance != NULL && arv_gv_fake_camera_is_running(_fakeCameraInstance);
 }
 
 #pragma mark - Connection
@@ -474,9 +560,18 @@ extern "C" {
     if (pixelBuffer && self.delegate) {
         static int delegateCallCount = 0;
         delegateCallCount++;
+        
+        // Log IOSurface info
+        IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixelBuffer);
         if (delegateCallCount % 30 == 1) {
-            NSLog(@"AravisBridge: Calling delegate with frame (call #%d)", delegateCallCount);
+            if (surface) {
+                IOSurfaceID surfaceID = IOSurfaceGetID(surface);
+                NSLog(@"AravisBridge: Calling delegate with frame #%d (IOSurface ID: %u)", delegateCallCount, surfaceID);
+            } else {
+                NSLog(@"AravisBridge: WARNING - Frame #%d has no IOSurface!", delegateCallCount);
+            }
         }
+        
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.delegate aravisBridge:self didReceiveFrame:pixelBuffer];
             CVPixelBufferRelease(pixelBuffer);
@@ -495,13 +590,12 @@ extern "C" {
                             width:(size_t)width 
                            height:(size_t)height 
                       pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
-    // Convert Mono8 to BGRA for display
-    CVPixelBufferCreate(kCFAllocatorDefault,
-                       width,
-                       height,
-                       kCVPixelFormatType_32BGRA,
-                       NULL,
-                       pixelBuffer);
+    // Convert Mono8 to BGRA for display with IOSurface backing
+    *pixelBuffer = CreateIOSurfaceBackedPixelBuffer(width, height, kCVPixelFormatType_32BGRA);
+    if (!*pixelBuffer) {
+        NSLog(@"AravisBridge: Failed to create pixel buffer for Mono8");
+        return;
+    }
     
     CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
     void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
@@ -529,13 +623,12 @@ extern "C" {
                             height:(size_t)height
                        pixelFormat:(ArvPixelFormat)bayerFormat
                        pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
-    // Create BGRA buffer
-    CVPixelBufferCreate(kCFAllocatorDefault,
-                       width,
-                       height,
-                       kCVPixelFormatType_32BGRA,
-                       NULL,
-                       pixelBuffer);
+    // Create BGRA buffer with IOSurface backing
+    *pixelBuffer = CreateIOSurfaceBackedPixelBuffer(width, height, kCVPixelFormatType_32BGRA);
+    if (!*pixelBuffer) {
+        NSLog(@"AravisBridge: Failed to create pixel buffer for Bayer");
+        return;
+    }
     
     CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
     void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
@@ -729,13 +822,12 @@ extern "C" {
                            width:(size_t)width 
                           height:(size_t)height 
                      pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
-    // Convert RGB to BGRA
-    CVPixelBufferCreate(kCFAllocatorDefault,
-                       width,
-                       height,
-                       kCVPixelFormatType_32BGRA,
-                       NULL,
-                       pixelBuffer);
+    // Convert RGB to BGRA with IOSurface backing
+    *pixelBuffer = CreateIOSurfaceBackedPixelBuffer(width, height, kCVPixelFormatType_32BGRA);
+    if (!*pixelBuffer) {
+        NSLog(@"AravisBridge: Failed to create pixel buffer for RGB");
+        return;
+    }
     
     CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
     void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);
@@ -763,13 +855,12 @@ extern "C" {
                            width:(size_t)width 
                           height:(size_t)height 
                      pixelBuffer:(CVPixelBufferRef *)pixelBuffer {
-    // Convert BGR to BGRA
-    CVPixelBufferCreate(kCFAllocatorDefault,
-                       width,
-                       height,
-                       kCVPixelFormatType_32BGRA,
-                       NULL,
-                       pixelBuffer);
+    // Convert BGR to BGRA with IOSurface backing
+    *pixelBuffer = CreateIOSurfaceBackedPixelBuffer(width, height, kCVPixelFormatType_32BGRA);
+    if (!*pixelBuffer) {
+        NSLog(@"AravisBridge: Failed to create pixel buffer for BGR");
+        return;
+    }
     
     CVPixelBufferLockBaseAddress(*pixelBuffer, 0);
     void *baseAddress = CVPixelBufferGetBaseAddress(*pixelBuffer);

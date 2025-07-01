@@ -8,6 +8,8 @@
 import Foundation
 import CoreMediaIO
 import IOKit.audio
+import IOSurface
+import QuartzCore
 import os.log
 
 // MARK: - Device Source
@@ -20,7 +22,7 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
     private var _streamingCounter: UInt32 = 0
     private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "DeviceSource")
     
-    // Frame queue for receiving frames from main app
+    // Frame queue for receiving frames from main app via sink stream
     private let frameQueue = DispatchQueue(label: "frameQueue", qos: .userInteractive)
     private var pendingFrames: [CMSampleBuffer] = []
     private let maxQueueSize = 3
@@ -28,11 +30,16 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
     init(localizedName: String) {
         super.init()
         
+        logger.info("Creating device with name: \(localizedName)")
+        
         // Use a consistent device ID
         let deviceID = UUID(uuidString: "7A96E4B8-1A7B-4F8C-9E3D-5C2A8B4D9F0E")!
-        self.device = CMIOExtensionDevice(localizedName: localizedName, deviceID: deviceID, legacyDeviceID: nil, source: self)
+        logger.info("Using device ID: \(deviceID)")
         
-        // Default format - will be updated when we receive frames
+        self.device = CMIOExtensionDevice(localizedName: localizedName, deviceID: deviceID, legacyDeviceID: nil, source: self)
+        logger.info("Device created successfully")
+        
+        // Default format - 32BGRA is required for QuickTime compatibility
         let dims = CMVideoDimensions(width: 1920, height: 1080)
         var videoDescription: CMFormatDescription!
         CMVideoFormatDescriptionCreate(
@@ -44,12 +51,16 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
             formatDescriptionOut: &videoDescription
         )
         
+        logger.info("Creating default format: 1920x1080 32BGRA")
+        
         let videoStreamFormat = CMIOExtensionStreamFormat(
             formatDescription: videoDescription,
-            maxFrameDuration: CMTime(value: 1, timescale: 30),
-            minFrameDuration: CMTime(value: 1, timescale: 60),
+            maxFrameDuration: CMTime(value: 1, timescale: 30),  // 30 fps max
+            minFrameDuration: CMTime(value: 1, timescale: 60),  // 60 fps capable
             validFrameDurations: nil
         )
+        
+        logger.info("Stream format created with frame rate: 30-60 fps")
         
         // Create source stream (output from extension)
         let sourceStreamID = UUID(uuidString: "8B97F5C9-2B8C-5F9D-0F4E-6D3B9C5E0F1F")!
@@ -101,8 +112,8 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         _streamingCounter += 1
         logger.info("Start streaming, counter: \(self._streamingCounter)")
         
-        // Start looking for frames from shared memory or XPC
-        startReceivingFrames()
+        // Frames will come through the sink stream's consumeSampleBuffer method
+        // No need to start XPC service
     }
     
     func stopStreaming() {
@@ -111,27 +122,14 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         } else {
             _streamingCounter = 0
             logger.info("Stop streaming")
-            stopReceivingFrames()
+            // Clean up any pending frames
+            frameQueue.sync {
+                pendingFrames.removeAll()
+            }
         }
     }
     
     // MARK: - Frame Handling
-    
-    private func startReceivingFrames() {
-        // This is where we'll receive frames from the main app
-        // For now, let's set up the structure
-        logger.info("Ready to receive frames from main app")
-        
-        // TODO: Set up XPC connection or shared memory to receive frames
-        // For testing, we'll generate a test pattern
-        generateTestPattern()
-    }
-    
-    private func stopReceivingFrames() {
-        frameQueue.sync {
-            pendingFrames.removeAll()
-        }
-    }
     
     private func generateTestPattern() {
         // Temporary test pattern generation
@@ -207,7 +205,15 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         _sourceStreamSource.sendFrame(sampleBuffer)
     }
     
+    private var forwardedFrameCount: UInt64 = 0
+    
     func handleReceivedFrame(_ sampleBuffer: CMSampleBuffer) {
+        forwardedFrameCount += 1
+        
+        if forwardedFrameCount == 1 || forwardedFrameCount % 30 == 0 {
+            logger.info("🔄 Forwarding frame #\(self.forwardedFrameCount) from sink to source stream")
+        }
+        
         // Forward the frame from sink to source
         sendFrame(sampleBuffer)
     }
@@ -281,7 +287,16 @@ class GigEVirtualCameraExtensionStreamSource: NSObject, CMIOExtensionStreamSourc
         deviceSource.stopStreaming()
     }
     
+    private var frameCount: UInt64 = 0
+    
     func sendFrame(_ sampleBuffer: CMSampleBuffer) {
+        frameCount += 1
+        
+        // Log first frame and then every 30th frame
+        if frameCount == 1 || frameCount % 30 == 0 {
+            logger.info("📤 Sending frame #\(self.frameCount) to Photo Booth")
+        }
+        
         let timing = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let hostTime = UInt64(timing.seconds * Double(NSEC_PER_SEC))
         stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: hostTime)
@@ -299,14 +314,22 @@ class GigEVirtualCameraExtensionProviderSource: NSObject, CMIOExtensionProviderS
     init(clientQueue: DispatchQueue?) {
         super.init()
         
+        logger.info("=== GigE Virtual Camera Extension Starting ===")
+        logger.info("Creating provider...")
+        
         provider = CMIOExtensionProvider(source: self, clientQueue: clientQueue)
+        
+        logger.info("Creating device source...")
         deviceSource = GigEVirtualCameraExtensionDeviceSource(localizedName: "GigE Virtual Camera")
+        
+        logger.info("Device created with ID: \(self.deviceSource.device.deviceID)")
         
         do {
             try provider.addDevice(deviceSource.device)
-            logger.info("Successfully added device to provider")
+            logger.info("✅ Successfully added device to provider")
+            logger.info("Extension initialization complete")
         } catch {
-            logger.error("Failed to add device: \(error.localizedDescription)")
+            logger.error("❌ Failed to add device: \(error.localizedDescription)")
         }
     }
     
@@ -398,15 +421,25 @@ class GigEVirtualCameraExtensionSinkStreamSource: NSObject, CMIOExtensionStreamS
     }
     
     func startStream() throws {
-        logger.info("Sink stream started")
+        logger.info("Sink stream started - ready to receive frames")
+        // The stream is now active and ready to receive frames via consumeSampleBuffer
     }
     
     func stopStream() throws {
         logger.info("Sink stream stopped")
     }
     
+    private var sinkFrameCount: UInt64 = 0
+    
     func consumeSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        logger.debug("Received frame in sink stream")
+        sinkFrameCount += 1
+        
+        // Log first frame and then every 30th frame
+        if sinkFrameCount == 1 || sinkFrameCount % 30 == 0 {
+            logger.info("📥 Received frame #\(self.sinkFrameCount) in sink stream")
+        }
+        
+        // Forward the frame to the source stream
         deviceSource?.handleReceivedFrame(sampleBuffer)
     }
 }

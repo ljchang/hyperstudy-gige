@@ -7,6 +7,7 @@
 
 import Foundation
 import SystemExtensions
+import CoreMediaIO
 import os.log
 
 class ExtensionManager: NSObject, ObservableObject {
@@ -20,6 +21,7 @@ class ExtensionManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
+        checkExtensionStatus()
     }
     
     func installExtension() {
@@ -51,6 +53,94 @@ class ExtensionManager: NSObject, ObservableObject {
         )
         request.delegate = self
         OSSystemExtensionManager.shared.submitRequest(request)
+    }
+    
+    func checkExtensionStatus() {
+        // Check if extension is already installed by trying to find it in the system
+        statusMessage = "Checking extension status..."
+        
+        // Use systemextensionsctl output or check if the virtual camera exists
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            let task = Process()
+            task.launchPath = "/usr/bin/systemextensionsctl"
+            task.arguments = ["list"]
+            
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            
+            do {
+                try task.run()
+                task.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8) {
+                    DispatchQueue.main.async {
+                        if output.contains("com.lukechang.GigEVirtualCamera.Extension") {
+                            if output.contains("[activated enabled]") {
+                                self?.extensionStatus = "Installed"
+                                self?.statusMessage = "Extension is installed and active"
+                                self?.logger.info("Extension is already installed")
+                                // Trigger the extension to start
+                                self?.triggerExtensionStart()
+                            } else if output.contains("[terminated waiting") {
+                                self?.extensionStatus = "Pending Uninstall"
+                                self?.statusMessage = "Extension waiting to uninstall"
+                            } else {
+                                self?.extensionStatus = "Not Active"
+                                self?.statusMessage = "Extension found but not active"
+                            }
+                        } else {
+                            self?.extensionStatus = "Not Installed"
+                            self?.statusMessage = "Extension not found in system"
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.logger.error("Failed to check extension status: \(error.localizedDescription)")
+                    self?.statusMessage = "Could not determine extension status"
+                }
+            }
+        }
+    }
+    
+    private func triggerExtensionStart() {
+        logger.info("Triggering extension start by enumerating CMIO devices")
+        
+        // Enable virtual camera discovery
+        var prop = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyAllowScreenCaptureDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        
+        var allow: UInt32 = 1
+        CMIOObjectSetPropertyData(
+            CMIOObjectID(kCMIOObjectSystemObject),
+            &prop,
+            0,
+            nil,
+            UInt32(MemoryLayout<UInt32>.size),
+            &allow
+        )
+        
+        // Enumerate CMIO devices to trigger extension loading
+        var propertyAddress = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        
+        var dataSize: UInt32 = 0
+        CMIOObjectGetPropertyDataSize(
+            CMIOObjectID(kCMIOObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize
+        )
+        
+        logger.info("CMIO device enumeration triggered - extension should start now")
     }
 }
 

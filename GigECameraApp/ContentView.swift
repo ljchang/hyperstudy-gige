@@ -17,10 +17,10 @@ struct ContentView: View {
             // Background
             VisualEffectBackground()
             
-            VStack(spacing: DesignSystem.Spacing.large) {
+            VStack(spacing: DesignSystem.Spacing.medium) {
                 // Header with camera icon
                 HeaderView(isConnected: cameraManager.isConnected)
-                    .padding(.top, DesignSystem.Spacing.xLarge)
+                    .padding(.top, DesignSystem.Spacing.large)
                 
                 // Extension Status and Controls
                 VStack(spacing: DesignSystem.Spacing.medium) {
@@ -63,6 +63,26 @@ struct ContentView: View {
                         }
                     }
                     
+                    // Debug button to reconnect frame sender
+                    if extensionManager.extensionStatus == "Installed" && !cameraManager.isFrameSenderConnected {
+                        Button(action: {
+                            cameraManager.retryFrameSenderConnection()
+                        }) {
+                            Label("Connect to Virtual Camera", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    
+                    // Test XPC button
+                    if extensionManager.extensionStatus == "Installed" {
+                        Button(action: {
+                            cameraManager.testXPCConnection()
+                        }) {
+                            Label("Test XPC Connection", systemImage: "antenna.radiowaves.left.and.right")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    
                     // Debug feedback area
                     if !extensionManager.statusMessage.isEmpty {
                         VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
@@ -91,16 +111,16 @@ struct ContentView: View {
                         )
                     }
                 }
-                .padding(.horizontal, DesignSystem.Spacing.xLarge)
-                .padding(.vertical, DesignSystem.Spacing.medium)
+                .padding(.horizontal, DesignSystem.Spacing.large)
+                .padding(.vertical, DesignSystem.Spacing.small)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.gray.opacity(0.1))
                 )
-                .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                .padding(.horizontal, DesignSystem.Spacing.large)
                 
                 Divider()
-                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                    .padding(.horizontal, DesignSystem.Spacing.large)
                 
                 // Camera selection section
                 if !cameraManager.availableCameras.isEmpty {
@@ -125,7 +145,7 @@ struct ContentView: View {
                         .pickerStyle(MenuPickerStyle())
                         .labelsHidden()
                     }
-                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                    .padding(.horizontal, DesignSystem.Spacing.large)
                 }
                 
                 // Status section
@@ -170,6 +190,24 @@ struct ContentView: View {
                         // Preview toggle button
                         Button(action: {
                             cameraManager.togglePreview()
+                            
+                            // Animate window resize
+                            DispatchQueue.main.async {
+                                if let window = NSApplication.shared.windows.first {
+                                    NSAnimationContext.runAnimationGroup({ context in
+                                        context.duration = 0.3
+                                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                                        
+                                        let targetHeight: CGFloat = cameraManager.isShowingPreview ? 800 : 500
+                                        var frame = window.frame
+                                        let heightDiff = targetHeight - frame.height
+                                        frame.size.height = targetHeight
+                                        frame.origin.y -= heightDiff // Keep window top edge in place
+                                        
+                                        window.animator().setFrame(frame, display: true)
+                                    })
+                                }
+                            }
                         }) {
                             HStack {
                                 Image(systemName: cameraManager.isShowingPreview ? "eye.slash.fill" : "eye.fill")
@@ -187,32 +225,26 @@ struct ContentView: View {
                         
                         // Embedded preview
                         if cameraManager.isShowingPreview {
-                            VStack(spacing: 0) {
-                                // Add a border to see if the view is there
-                                Rectangle()
-                                    .fill(Color.blue)
-                                    .frame(height: 2)
-                                
-                                CameraPreviewSection(previewImage: $previewImage)
-                                    .environmentObject(cameraManager)
-                                    .frame(minHeight: 240)
-                                    .background(Color.red.opacity(0.1)) // Debug background
-                                
-                                Rectangle()
-                                    .fill(Color.blue)
-                                    .frame(height: 2)
-                            }
-                            .padding(.top, DesignSystem.Spacing.medium)
-                            .transition(.opacity)
-                            .animation(.easeInOut, value: cameraManager.isShowingPreview)
+                            CameraPreviewSection(previewImage: $previewImage)
+                                .environmentObject(cameraManager)
+                                .frame(height: 300)
+                                .padding(.top, DesignSystem.Spacing.medium)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                    removal: .opacity.combined(with: .scale)
+                                ))
+                                .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
                         }
                     }
                 }
-                .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                .padding(.horizontal, DesignSystem.Spacing.large)
                 
-                Spacer()
+                Spacer(minLength: DesignSystem.Spacing.small)
             }
+            .padding(.bottom, DesignSystem.Spacing.small)
         }
+        .frame(minHeight: cameraManager.isShowingPreview ? 800 : 500)
+        .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
     }
 }
 
@@ -294,17 +326,15 @@ struct CameraPreviewSection: View {
     
     var body: some View {
         ZStack {
-            // Always show a background so we can see if the view exists
-            Rectangle()
+            // Background
+            RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium)
                 .fill(Color.black)
-                .frame(height: 240)
-                .cornerRadius(DesignSystem.CornerRadius.medium)
             
             if let image = frameHandler.currentImage {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 240)
+                    .frame(maxHeight: 280)
                     .cornerRadius(DesignSystem.CornerRadius.medium)
             } else {
                 VStack {
@@ -315,12 +345,10 @@ struct CameraPreviewSection: View {
                         .font(DesignSystem.Typography.caption)
                         .foregroundColor(.white)
                         .padding(.top, DesignSystem.Spacing.small)
-                    Text("View is mounted: \(hasAppeared ? "Yes" : "No")")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundColor(.yellow)
                 }
             }
         }
+        .frame(height: 300)
         .onAppear {
             print("CameraPreviewSection: ===== VIEW APPEARED =====")
             hasAppeared = true
@@ -415,6 +443,6 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(CameraManager.shared)
-            .frame(width: 400, height: 740)
+            .frame(width: 400)
     }
 }

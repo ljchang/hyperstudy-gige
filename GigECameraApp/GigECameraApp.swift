@@ -16,33 +16,20 @@ struct GigECameraApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(cameraManager)
-                .frame(width: 400, height: cameraManager.isShowingPreview ? 720 : 440)
-                .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
+                .frame(minWidth: 400, idealWidth: 400, maxWidth: 400)
                 .onAppear {
                     // Configure window
                     DispatchQueue.main.async {
                         if let window = NSApplication.shared.windows.first {
-                            window.setContentSize(NSSize(width: 400, height: 440))
-                            window.minSize = NSSize(width: 400, height: 440)
-                            window.maxSize = NSSize(width: 600, height: 800)
+                            // Set minimum size but allow vertical expansion
+                            window.minSize = NSSize(width: 400, height: 500)
+                            window.maxSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+                            
+                            // Make window resizable
                             window.styleMask.insert(.resizable)
+                            
+                            // Center the window
                             window.center()
-                        }
-                    }
-                }
-                .onChange(of: cameraManager.isShowingPreview) { newValue in
-                    // Animate window resize when preview toggles
-                    DispatchQueue.main.async {
-                        if let window = NSApplication.shared.windows.first {
-                            let newHeight: CGFloat = newValue ? 720 : 440
-                            let currentFrame = window.frame
-                            let newFrame = NSRect(
-                                x: currentFrame.origin.x,
-                                y: currentFrame.origin.y + currentFrame.height - newHeight,
-                                width: 400,
-                                height: newHeight
-                            )
-                            window.setFrame(newFrame, display: true, animate: true)
                         }
                     }
                 }

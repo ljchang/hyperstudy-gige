@@ -1,35 +1,43 @@
 # GigE Virtual Camera for macOS
 
-A native macOS application that creates a virtual camera from GigE Vision cameras, enabling use with any macOS application that supports cameras (Zoom, Teams, OBS, QuickTime, etc.).
+A native macOS application that creates virtual cameras from GigE Vision industrial cameras, making them available to any macOS application (Zoom, Teams, OBS, QuickTime, Photo Booth, etc.).
 
 ## Features
 
-- **Native macOS Integration**: Appears as a standard camera in System Settings
-- **Universal GigE Support**: Works with any GigE Vision compliant camera via Aravis
-- **Virtual Camera**: Creates a macOS Camera Extension for system-wide use
-- **Real-time Preview**: Built-in preview window with camera controls
-- **Easy Installation**: Simple drag-and-drop installation
+- **System Extension Architecture**: Implements a proper CMIO System Extension for virtual camera functionality
+- **Native macOS Integration**: Appears as a standard camera in all macOS apps
+- **Universal GigE Support**: Works with any GigE Vision compliant camera via Aravis library
+- **Real-time Preview**: Built-in preview with camera status and controls
+- **Professional Features**: Designed for industrial and professional camera integration
+- **Notarized & Signed**: Properly signed with Developer ID for secure distribution
 
 ## Requirements
 
-- macOS 13.0 (Ventura) or later
-- GigE Vision compliant camera
-- Network connection to camera
+- macOS 12.3 (Monterey) or later  
+- ARM64 (Apple Silicon) Mac
+- GigE Vision compliant camera on the same network
+- System Extension approval (first launch only)
 
 ## Installation
 
-1. Download the latest release from the Releases page
-2. Open the DMG file and drag GigEVirtualCamera.app to Applications
-3. Launch the app and follow the setup instructions
-4. Grant necessary permissions when prompted
+### For End Users (Coming Soon)
+1. Download the latest release DMG
+2. Drag GigEVirtualCamera.app to Applications
+3. Launch and approve System Extension installation
+4. Grant camera permissions when prompted
+
+### For Developers (Current)
+**Note**: The app requires Apple's approval for the System Extension entitlement. Until approved, development requires disabling SIP on test machines.
 
 ## Building from Source
 
 ### Prerequisites
 
-- Xcode 14.0 or later
-- macOS 13.0 SDK or later
-- Homebrew (for dependencies)
+- Xcode 15.0 or later
+- macOS 14.0 SDK or later  
+- [Homebrew](https://brew.sh) (for Aravis dependency)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+- Apple Developer account with Developer ID certificate
 
 ### Build Steps
 
@@ -39,61 +47,122 @@ git clone https://github.com/yourusername/hyperstudy-gige.git
 cd hyperstudy-gige
 
 # Install dependencies
-cd macos
-./Scripts/setup_dependencies.sh
+brew install aravis
+brew install xcodegen
 
 # Build the app
 ./Scripts/build_release.sh
 
-# The built app will be at: macos/build/Release/GigEVirtualCamera.app
+# For development builds (uses Apple Development signing)
+./Scripts/build_dev.sh
 ```
 
-### Development
+### Development Setup
 
-Open `macos/GigEVirtualCamera.xcodeproj` in Xcode for development.
+1. **Disable SIP for testing** (development only):
+   ```bash
+   # Boot into Recovery Mode
+   # Open Terminal and run:
+   csrutil enable --without sysext
+   # Restart
+   ```
+
+2. **Open in Xcode**:
+   ```bash
+   xcodegen generate
+   open GigEVirtualCamera.xcodeproj
+   ```
+
+3. **Select your development team** in Xcode project settings
 
 ## Usage
 
-1. **Launch the App**: Open GigEVirtualCamera from Applications
-2. **Select Camera**: Choose your GigE camera from the dropdown
-3. **Start Streaming**: Click "Start" to begin streaming
-4. **Use in Apps**: Select "GigE Virtual Camera" in any app's camera settings
+1. **First Launch**:
+   - Approve System Extension installation when prompted
+   - Allow camera permissions in System Settings
+   - May require restart after first installation
+
+2. **Using the App**:
+   - Launch GigEVirtualCamera from Applications
+   - Your GigE cameras will appear in the dropdown
+   - Select a camera and click "Connect"
+   - The virtual camera is now available system-wide
+
+3. **In Other Apps**:
+   - Open any camera-enabled app (Zoom, QuickTime, etc.)
+   - Select "GigE Virtual Camera" from camera options
+   - The GigE camera feed will appear
 
 ## Troubleshooting
 
+### System Extension Issues
+
+```bash
+# Check if extension is installed
+systemextensionsctl list
+
+# Reset system extensions (requires SIP disabled)
+systemextensionsctl reset
+
+# View logs
+log stream --predicate 'subsystem == "com.apple.cmio"'
+```
+
 ### Camera Not Detected
 
-- Ensure camera is connected to the same network
-- Check firewall settings allow GigE Vision traffic
-- Try refreshing the camera list
+- Verify camera is powered and connected to network
+- Check if camera appears in: `arv-camera-test-0.8`
+- Ensure firewall allows UDP port 3956 (GigE Vision)
+- Try using camera's IP address directly
 
 ### Virtual Camera Not Appearing
 
-- Restart the app
-- Check System Settings > Privacy & Security > Camera
-- Reinstall the camera extension: `./Scripts/reinstall_extension.sh`
+1. Check System Settings → Privacy & Security → Camera
+2. Ensure GigEVirtualCamera has permission
+3. Restart the app or your Mac
+4. For developers: Verify SIP is disabled for testing
 
-### Performance Issues
+### Build Issues
 
-- Reduce camera resolution or frame rate
-- Ensure good network connection to camera
-- Close other resource-intensive applications
+- Clean build: `xcodebuild clean`
+- Reset derived data: `rm -rf ~/Library/Developer/Xcode/DerivedData`
+- Regenerate project: `xcodegen generate`
 
 ## Architecture
 
-The project uses a simplified architecture where both the main app and camera extension share the same camera manager instance:
+The project implements a macOS System Extension architecture:
 
-- **GigECameraApp**: Main application with UI, camera discovery, and settings
-- **GigECameraExtension**: CMIOExtension that provides the virtual camera to macOS
-- **GigECameraManager**: Shared singleton that handles camera communication for both app and extension
-- **AravisBridge**: Objective-C++ wrapper around the Aravis GigE Vision library
-- **Shared**: Common code including camera management and frame distribution
+### Components
 
-Key benefits:
-- No complex IPC or XPC communication needed
-- Direct frame access in the extension
-- Simplified debugging and maintenance
-- Better performance with less overhead
+- **GigECameraApp**: Main application
+  - SwiftUI interface for camera selection and control
+  - System Extension lifecycle management
+  - Camera preview and status monitoring
+  
+- **GigECameraExtension**: CMIO System Extension
+  - Implements `CMIOExtension` protocol
+  - Provides virtual camera to macOS
+  - Receives frames via CMIO sink stream API
+  
+- **Shared Components**:
+  - `CameraManager`: Handles GigE camera discovery and control
+  - `AravisBridge`: Objective-C++ wrapper for Aravis library
+  - `CMIOFrameSender`: Manages frame transfer to extension
+  - `ExtensionManager`: System Extension installation/activation
+
+### Key Design Decisions
+
+1. **System Extension**: Required for CMIO camera extensions (not App Extension)
+2. **CMIO Sink/Source Pattern**: Uses Apple's recommended architecture for frame transfer
+3. **Hardened Runtime**: Enabled with necessary entitlements for camera access
+4. **Notarization**: Full Developer ID signing and notarization support
+
+### Data Flow
+
+1. GigE camera → Aravis → AravisBridge (C++ to Swift bridge)
+2. CameraManager → CMIOFrameSender → CMIO sink stream
+3. Extension receives frames → Provides to macOS as virtual camera
+4. Apps access virtual camera through standard macOS camera APIs
 
 ## Contributing
 

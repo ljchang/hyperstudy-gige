@@ -30,11 +30,11 @@ struct GigECameraApp: App {
                         }
                     }
                 }
-                .onChange(of: cameraManager.isShowingPreview) { isShowing in
+                .onChange(of: cameraManager.isShowingPreview) { newValue in
                     // Animate window resize when preview toggles
                     DispatchQueue.main.async {
                         if let window = NSApplication.shared.windows.first {
-                            let newHeight: CGFloat = isShowing ? 720 : 440
+                            let newHeight: CGFloat = newValue ? 720 : 440
                             let currentFrame = window.frame
                             let newFrame = NSRect(
                                 x: currentFrame.origin.x,
@@ -71,6 +71,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Bring to front
         NSApp.activate(ignoringOtherApps: true)
+        
+        // Extension installation is now handled manually via UI buttons
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

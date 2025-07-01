@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var cameraManager: CameraManager
     @State private var previewImage: NSImage?
+    @StateObject private var extensionManager = ExtensionManager.shared
     
     var body: some View {
         ZStack {
@@ -20,6 +21,86 @@ struct ContentView: View {
                 // Header with camera icon
                 HeaderView(isConnected: cameraManager.isConnected)
                     .padding(.top, DesignSystem.Spacing.xLarge)
+                
+                // Extension Status and Controls
+                VStack(spacing: DesignSystem.Spacing.medium) {
+                    HStack {
+                        Text("Camera Extension Status:")
+                            .font(DesignSystem.Typography.callout)
+                            .foregroundColor(DesignSystem.Colors.textSecondary)
+                        Spacer()
+                        Text(extensionManager.extensionStatus)
+                            .font(DesignSystem.Typography.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(extensionManager.extensionStatus == "Installed" ? .green : DesignSystem.Colors.textSecondary)
+                    }
+                    
+                    HStack(spacing: DesignSystem.Spacing.medium) {
+                        Button(action: {
+                            extensionManager.installExtension()
+                        }) {
+                            Label("Install Extension", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(extensionManager.isInstalling || extensionManager.extensionStatus == "Installed")
+                        
+                        Button(action: {
+                            extensionManager.uninstallExtension()
+                        }) {
+                            Label("Uninstall Extension", systemImage: "minus.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(extensionManager.isInstalling || extensionManager.extensionStatus != "Installed")
+                    }
+                    
+                    if extensionManager.extensionStatus == "Needs Approval" {
+                        HStack(spacing: DesignSystem.Spacing.small) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Please approve in System Settings > Privacy & Security")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    
+                    // Debug feedback area
+                    if !extensionManager.statusMessage.isEmpty {
+                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
+                            Text("Debug Output:")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.gray)
+                            
+                            Text(extensionManager.statusMessage)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            if !extensionManager.errorDetail.isEmpty {
+                                Text("Error Detail: \(extensionManager.errorDetail)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.small)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.black.opacity(0.05))
+                        )
+                    }
+                }
+                .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                .padding(.vertical, DesignSystem.Spacing.medium)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.gray.opacity(0.1))
+                )
+                .padding(.horizontal, DesignSystem.Spacing.xLarge)
+                
+                Divider()
+                    .padding(.horizontal, DesignSystem.Spacing.xLarge)
                 
                 // Camera selection section
                 if !cameraManager.availableCameras.isEmpty {
@@ -130,20 +211,6 @@ struct ContentView: View {
                 .padding(.horizontal, DesignSystem.Spacing.xLarge)
                 
                 Spacer()
-                
-                // Extension status info
-                if !cameraManager.isExtensionInstalled {
-                    VStack(spacing: DesignSystem.Spacing.small) {
-                        Text("App must be run from /Applications folder")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundColor(DesignSystem.Colors.statusOrange)
-                        Text("Move the app to Applications and restart")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                    }
-                    .padding()
-                }
-                
             }
         }
     }

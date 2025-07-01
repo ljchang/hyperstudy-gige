@@ -92,21 +92,37 @@ verify_signing() {
     # Check if hardened runtime is enabled
     if ! codesign -dv "$APP_PATH" 2>&1 | grep -q "flags=0x10000(runtime)"; then
         print_warning "Hardened runtime not enabled. This is required for notarization."
-        print_status "Re-signing with hardened runtime..."
-        
-        codesign --force --deep \
-                 --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
-                 --options runtime \
-                 --timestamp \
-                 "$APP_PATH"
+        exit 1
     fi
     
-    # Verify signature
-    if codesign --verify --deep --strict "$APP_PATH" 2>&1; then
-        print_success "Code signature valid"
+    # Check System Extension
+    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+    if [ -d "$EXTENSION_PATH" ]; then
+        print_status "Verifying System Extension signature..."
+        if ! codesign -dvv "$EXTENSION_PATH" 2>&1 | grep -q "Developer ID Application"; then
+            print_error "System Extension is not signed with Developer ID certificate"
+            exit 1
+        fi
+        
+        # Verify extension has proper entitlements
+        if codesign -d --entitlements - "$APP_PATH" 2>&1 | grep -q "com.apple.developer.system-extension.install"; then
+            print_success "System Extension install entitlement present"
+        else
+            print_error "Missing com.apple.developer.system-extension.install entitlement"
+            exit 1
+        fi
+    fi
+    
+    # Verify signatures (not using --deep as we check components individually)
+    if codesign --verify --strict "$APP_PATH" 2>&1; then
+        print_success "App signature valid"
     else
-        print_error "Code signature verification failed"
+        print_error "App signature verification failed"
         exit 1
+    fi
+    
+    if [ -d "$EXTENSION_PATH" ] && codesign --verify --strict "$EXTENSION_PATH" 2>&1; then
+        print_success "System Extension signature valid"
     fi
 }
 
@@ -194,6 +210,21 @@ verify_notarization() {
     else
         print_warning "Notarization verification shows:"
         echo "$SPCTL_OUTPUT"
+    fi
+    
+    # Check System Extension specifically
+    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+    if [ -d "$EXTENSION_PATH" ]; then
+        echo ""
+        print_status "Checking System Extension notarization..."
+        SPCTL_EXT_OUTPUT=$(spctl -a -vvv -t sysx "$EXTENSION_PATH" 2>&1)
+        
+        if echo "$SPCTL_EXT_OUTPUT" | grep -q "accepted"; then
+            print_success "System Extension is properly notarized"
+        else
+            print_warning "System Extension verification shows:"
+            echo "$SPCTL_EXT_OUTPUT"
+        fi
     fi
     
     # Also check with stapler

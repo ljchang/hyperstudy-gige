@@ -7,17 +7,22 @@
 
 import Foundation
 
-struct CameraConstants {
+enum CameraConstants {
     // MARK: - Bundle Identifiers
-    struct BundleID {
+    enum BundleID {
         static let app = "com.lukechang.GigEVirtualCamera"
         static let appGroup = "group.com.lukechang.gigecamera"
         static let cameraExtension = "com.lukechang.GigEVirtualCamera.Extension"
+        static let `extension` = "com.lukechang.GigEVirtualCamera.Extension"  // Alias for ExtensionManager
     }
     
     // MARK: - Camera Info
-    struct Camera {
+    enum Camera {
         static let name = "GigE Virtual Camera"
+        static let deviceUID = "GigEVirtualCamera"
+        static let deviceName = "GigE Virtual Camera"
+        static let deviceManufacturer = "Luke Chang"
+        static let deviceModel = "Virtual Camera 1.0"
         static let manufacturer = "Luke Chang"
         static let defaultWidth = 1920
         static let defaultHeight = 1080
@@ -25,24 +30,36 @@ struct CameraConstants {
     }
     
     // MARK: - Supported Formats
-    struct Formats {
+    enum Formats {
+        struct Format {
+            let width: Int
+            let height: Int
+            let frameRate: Double
+        }
+        
         static let format1080p30 = VideoFormat(width: 1920, height: 1080, frameRate: 30)
         static let format720p60 = VideoFormat(width: 1280, height: 720, frameRate: 60)
         static let format720p30 = VideoFormat(width: 1280, height: 720, frameRate: 30)
         static let format480p30 = VideoFormat(width: 640, height: 480, frameRate: 30)
         
-        static let all = [format1080p30, format720p60, format720p30, format480p30]
+        static let all = [
+            Format(width: 1920, height: 1080, frameRate: 30.0),
+            Format(width: 1280, height: 720, frameRate: 30.0),
+            Format(width: 640, height: 480, frameRate: 30.0)
+        ]
+        
+        static let allVideoFormats = [format1080p30, format720p60, format720p30, format480p30]
     }
     
     // MARK: - User Defaults Keys
-    struct UserDefaultsKeys {
+    enum UserDefaultsKeys {
         static let isExtensionInstalled = "isExtensionInstalled"
         static let lastConnectedCamera = "lastConnectedCamera"
         static let selectedFormatIndex = "selectedFormatIndex"
     }
     
     // MARK: - Notifications
-    struct Notifications {
+    enum Notifications {
         static let cameraDidConnect = Notification.Name("GigECameraDidConnect")
         static let cameraDidDisconnect = Notification.Name("GigECameraDidDisconnect")
         static let extensionStatusChanged = Notification.Name("ExtensionStatusChanged")

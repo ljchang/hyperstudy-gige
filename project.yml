@@ -4,11 +4,14 @@ options:
   deploymentTarget:
     macOS: "12.3"
   developmentLanguage: en
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
   
 settings:
   DEVELOPMENT_TEAM: S368GH6KF7
-  CODE_SIGN_STYLE: Manual
-  CODE_SIGN_IDENTITY: "Developer ID Application"
+  # Build for Apple Silicon only (Aravis is arm64 only)
+  ARCHS: arm64
+  ONLY_ACTIVE_ARCH: NO
   # Aravis settings
   HEADER_SEARCH_PATHS: 
     - /opt/homebrew/include
@@ -47,7 +50,8 @@ targets:
       - target: GigECameraExtension
         embed: true
         codeSign: true
-        embedInSubfolder: PlugIns
+        embedInSubfolder: Library/SystemExtensions
+      - sdk: SystemExtensions.framework
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera
       INFOPLIST_FILE: GigECameraApp/Info.plist
@@ -57,7 +61,21 @@ targets:
       CURRENT_PROJECT_VERSION: 1
       SWIFT_OBJC_BRIDGING_HEADER: Shared/GigEVirtualCamera-Bridging-Header.h
       OTHER_LDFLAGS: $(inherited)
-      # PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
+      ENABLE_HARDENED_RUNTIME: YES
+      INFOPLIST_KEY_NSSystemExtensionInstallationPrompt: "GigE Virtual Camera needs to install a system extension to provide virtual camera functionality."
+    configSettings:
+      Debug:
+        CODE_SIGN_ENTITLEMENTS: GigECameraApp/GigECamera-Debug.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: "GigE Virtual Camera Dev"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: S368GH6KF7
+        CODE_SIGN_IDENTITY: "Apple Development"
+      Release:
+        CODE_SIGN_ENTITLEMENTS: GigECameraApp/GigECamera-Release.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: S368GH6KF7
+        CODE_SIGN_IDENTITY: "Developer ID Application: Luke  Chang (S368GH6KF7)"
     preBuildScripts:
       - script: |
           if [ -d "${SRCROOT}/Scripts" ]; then
@@ -70,15 +88,85 @@ targets:
           if [ "${CONFIGURATION}" = "Debug" ] || [ "${CONFIGURATION}" = "Release" ]; then
             "${SRCROOT}/Scripts/bundle_aravis.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
             "${SRCROOT}/Scripts/fix_rpaths.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
+            
+            # Sign all bundled libraries
+            echo "Signing bundled libraries..."
+            find "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
+              echo "Signing: $(basename "$lib")"
+              codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp=none "$lib" || true
+            done
           fi
         name: Bundle Aravis Libraries
         basedOnDependencyAnalysis: false
+      - script: |
+          # Copy app to /Applications for System Extension activation
+          if [ "${CONFIGURATION}" = "Debug" ] || [ "${CONFIGURATION}" = "Release" ]; then
+            echo "Copying app to /Applications..."
+            rm -rf "/Applications/${PRODUCT_NAME}.app" 2>/dev/null || true
+            # Use ditto to preserve code signatures and extended attributes
+            ditto "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app" "/Applications/${PRODUCT_NAME}.app"
+            echo "App copied to /Applications/${PRODUCT_NAME}.app"
+            
+            # Fix extension naming in /Applications
+            if [ -d "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
+              echo "Fixing extension naming..."
+              mv "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" \
+                 "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+              
+              # Sign all libraries first
+              echo "Signing libraries..."
+              find "/Applications/${PRODUCT_NAME}.app/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
+                codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp=none "$lib" || true
+              done
+              
+              # Remove provisioning profile from extension (system extensions don't use them)
+              echo "Removing extension provisioning profile..."
+              rm -f "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/embedded.provisionprofile"
+              
+              # Re-sign extension with expanded entitlements
+              echo "Signing extension..."
+              TEMP_EXT_ENTITLEMENTS="/tmp/expanded-ext-entitlements.plist"
+              cp "${SRCROOT}/GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements" "${TEMP_EXT_ENTITLEMENTS}"
+              codesign --force --deep --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
+                --entitlements "${TEMP_EXT_ENTITLEMENTS}" \
+                --timestamp=none \
+                "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+              rm -f "${TEMP_EXT_ENTITLEMENTS}"
+              
+              # Re-sign the entire app with expanded entitlements
+              echo "Re-signing entire app..."
+              TEMP_APP_ENTITLEMENTS="/tmp/expanded-app-entitlements.plist"
+              if [ "${CONFIGURATION}" = "Debug" ]; then
+                cp "${SRCROOT}/GigECameraApp/GigECamera-Debug.entitlements" "${TEMP_APP_ENTITLEMENTS}"
+              else
+                cp "${SRCROOT}/GigECameraApp/GigECamera-Release.entitlements" "${TEMP_APP_ENTITLEMENTS}"
+              fi
+              
+              codesign --force --deep --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
+                --entitlements "${TEMP_APP_ENTITLEMENTS}" \
+                --options runtime \
+                --timestamp=none \
+                "/Applications/${PRODUCT_NAME}.app"
+              rm -f "${TEMP_APP_ENTITLEMENTS}"
+              
+              echo "App re-signed successfully"
+            fi
+            
+            # Remove provisioning profile for Release builds (Developer ID doesn't use them)
+            if [ "${CONFIGURATION}" = "Release" ]; then
+              echo "Removing provisioning profile for Developer ID distribution..."
+              rm -f "/Applications/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile" 2>/dev/null || true
+              rm -f "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile" 2>/dev/null || true
+            fi
+          fi
+        name: Copy to Applications
+        basedOnDependencyAnalysis: false
           
   GigECameraExtension:
-    type: app-extension
+    type: system-extension
     platform: macOS
     sources:
-      - GigECameraExtension
+      - GigEVirtualCameraExtension
       - path: Shared
         excludes:
           - "AravisBridge-Stub.swift"
@@ -88,8 +176,9 @@ targets:
           - "GigECameraManager.swift"
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera.Extension
-      INFOPLIST_FILE: GigECameraExtension/Info.plist
-      CODE_SIGN_ENTITLEMENTS: GigECameraExtension/GigECameraExtension.entitlements
+      PRODUCT_BUNDLE_PACKAGE_TYPE: SYSX
+      INFOPLIST_FILE: GigEVirtualCameraExtension/Info.plist
+      CODE_SIGN_ENTITLEMENTS: GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements
       SWIFT_VERSION: 5.0
       MARKETING_VERSION: 1.0
       CURRENT_PROJECT_VERSION: 1
@@ -99,4 +188,40 @@ targets:
       HEADER_SEARCH_PATHS: []
       LIBRARY_SEARCH_PATHS: []
       OTHER_LDFLAGS: -ObjC
-      # PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"
+    configSettings:
+      Debug:
+        CODE_SIGN_ENTITLEMENTS: GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: "GigE Camera Extension Dev"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: S368GH6KF7
+        CODE_SIGN_IDENTITY: "Apple Development"
+      Release:
+        CODE_SIGN_ENTITLEMENTS: GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: S368GH6KF7
+        CODE_SIGN_IDENTITY: "Developer ID Application: Luke  Chang (S368GH6KF7)"
+    postBuildScripts:
+      - script: |
+          # The extension folder must match the bundle ID for sysextd to find it
+          echo "Extension will be embedded with correct name by main app target"
+        name: Extension Build Info
+        basedOnDependencyAnalysis: false
+
+schemes:
+  GigEVirtualCamera:
+    build:
+      targets:
+        GigEVirtualCamera: all
+        GigECameraExtension: all
+    run:
+      config: Debug
+      executable: GigEVirtualCamera
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

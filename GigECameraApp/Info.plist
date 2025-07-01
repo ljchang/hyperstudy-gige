@@ -31,6 +31,10 @@
     <key>NSCameraUsageDescription</key>
     <string>GigE Virtual Camera provides a virtual camera for use in other applications</string>
     <key>NSSystemExtensionUsageDescription</key>
-    <string>GigE Virtual Camera installs a camera extension to provide virtual camera functionality to other applications.</string>
+    <string>GigE Virtual Camera needs to install a system extension to provide virtual camera functionality</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>GigE Virtual Camera needs to access local network to discover and communicate with GigE Vision cameras</string>
 </dict>
 </plist>

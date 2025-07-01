@@ -17,6 +17,7 @@ struct DesignSystem {
         static let textSecondary = Color.secondary
         static let backgroundPrimary = Color(NSColor.windowBackgroundColor)
         static let backgroundSecondary = Color(NSColor.controlBackgroundColor)
+        static let primary = Color.accentColor
     }
     
     // MARK: - Typography

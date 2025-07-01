@@ -20,14 +20,10 @@ echo -e "\n3. Building Release configuration..."
 xcodebuild -project GigEVirtualCamera.xcodeproj \
            -target GigEVirtualCamera \
            -configuration Release \
-           build \
-           CODE_SIGN_IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)" \
-           DEVELOPMENT_TEAM="S368GH6KF7" \
-           CODE_SIGN_STYLE="Manual" \
-           PRODUCT_BUNDLE_IDENTIFIER="com.lukechang.GigEVirtualCamera"
+           build
 
 # 4. Find the built app
-RELEASE_APP=$(find ~/Library/Developer/Xcode/DerivedData/GigEVirtualCamera-*/Build/Products/Release -name "GigEVirtualCamera.app" | head -1)
+RELEASE_APP="/Users/lukechang/Github/hyperstudy-gige/build/Release/GigEVirtualCamera.app"
 
 if [ ! -d "$RELEASE_APP" ]; then
     echo "Error: Release app not found!"
@@ -47,16 +43,29 @@ cp -R "$RELEASE_APP" /Applications/
 
 # 7. Reset camera subsystem
 echo -e "\n7. Resetting camera subsystem..."
+killall -9 GigECameraExtension 2>/dev/null || true
 killall -9 cmioextension 2>/dev/null || true
 rm -rf ~/Library/Caches/com.apple.cmio* 2>/dev/null || true
 
-# 8. Launch the app
-echo -e "\n8. Launching app..."
-open /Applications/GigEVirtualCamera.app
-
 echo -e "\n✅ Release build complete!"
-echo -e "\nNext steps:"
-echo "1. Check System Settings > Privacy & Security > Camera"
-echo "2. Grant camera permissions if prompted"
-echo "3. Open Photo Booth or QuickTime to test the virtual camera"
-echo "4. If camera doesn't appear, restart your Mac"
+
+# Ask about notarization
+echo -e "\n=====================================
+The app has been built and signed with Developer ID.
+For distribution outside the App Store, it needs to be notarized.
+
+Would you like to notarize the app now? (y/n)"
+read -r response
+
+if [[ "$response" == "y" ]]; then
+    echo -e "\nStarting notarization process..."
+    /Users/lukechang/Github/hyperstudy-gige/Scripts/notarize.sh /Applications/GigEVirtualCamera.app
+else
+    echo -e "\nSkipping notarization. To notarize later, run:"
+    echo "./Scripts/notarize.sh /Applications/GigEVirtualCamera.app"
+    echo -e "\nNext steps for testing:"
+    echo "1. Check System Settings > Privacy & Security > Camera"
+    echo "2. Grant camera permissions if prompted"
+    echo "3. Open Photo Booth or QuickTime to test the virtual camera"
+    echo "4. If camera doesn't appear, restart your Mac"
+fi

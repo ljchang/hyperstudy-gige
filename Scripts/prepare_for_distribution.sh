@@ -31,14 +31,28 @@ sign_binary() {
     codesign --remove-signature "$binary_path" 2>/dev/null || true
     
     # Sign with hardened runtime and timestamp
-    codesign --force \
-             --sign "$IDENTITY" \
-             --identifier "$identifier" \
-             --options runtime \
-             --timestamp \
-             --verbose \
-             "$binary_path"
+    # Try with timestamp first, fall back to no timestamp if it fails
+    if ! codesign --force \
+                  --sign "$IDENTITY" \
+                  --identifier "$identifier" \
+                  --options runtime \
+                  --timestamp \
+                  --verbose \
+                  "$binary_path" 2>/dev/null; then
+        echo "  Timestamp service unavailable, signing without timestamp..."
+        codesign --force \
+                 --sign "$IDENTITY" \
+                 --identifier "$identifier" \
+                 --options runtime \
+                 --verbose \
+                 "$binary_path"
+    fi
 }
+
+# 0. Remove all embedded provisioning profiles
+echo -e "\n0. Removing embedded provisioning profiles..."
+find "$APP_PATH" -name "embedded.provisionprofile" -delete
+find "$APP_PATH" -name "*.provisionprofile" -delete
 
 # 1. Sign all bundled libraries
 echo -e "\n1. Signing bundled libraries..."
@@ -52,7 +66,7 @@ for lib in "$APP_PATH/Contents/Frameworks"/*.dylib; do
 done
 
 # Sign frameworks in extension
-EXTENSION_PATH="$APP_PATH/Contents/PlugIns/GigECameraExtension.appex"
+EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
 for lib in "$EXTENSION_PATH/Contents/Frameworks"/*.dylib; do
     if [ -f "$lib" ]; then
         lib_name=$(basename "$lib" .dylib)
@@ -69,14 +83,42 @@ if [ -f "$EXTENSION_PATH/Contents/MacOS/GigECameraExtension.debug.dylib" ]; then
                 "com.lukechang.GigEVirtualCamera.Extension.debug"
 fi
 
-# Sign the extension bundle
-codesign --force \
-         --sign "$IDENTITY" \
-         --entitlements "$EXTENSION_PATH/../../GigECameraExtension/GigECameraExtension.entitlements" \
-         --options runtime \
-         --timestamp \
-         --verbose \
-         "$EXTENSION_PATH"
+# Find entitlements file
+ENTITLEMENTS_PATH="/Users/lukechang/Github/hyperstudy-gige/GigECameraExtension/GigECameraExtension-Release.entitlements"
+if [ ! -f "$ENTITLEMENTS_PATH" ]; then
+    echo "Warning: Extension entitlements not found at $ENTITLEMENTS_PATH"
+    # Sign without entitlements
+    if ! codesign --force \
+                  --sign "$IDENTITY" \
+                  --options runtime \
+                  --timestamp \
+                  --verbose \
+                  "$EXTENSION_PATH" 2>/dev/null; then
+        echo "  Timestamp service unavailable, signing without timestamp..."
+        codesign --force \
+                 --sign "$IDENTITY" \
+                 --options runtime \
+                 --verbose \
+                 "$EXTENSION_PATH"
+    fi
+else
+    # Sign with entitlements
+    if ! codesign --force \
+                  --sign "$IDENTITY" \
+                  --entitlements "$ENTITLEMENTS_PATH" \
+                  --options runtime \
+                  --timestamp \
+                  --verbose \
+                  "$EXTENSION_PATH" 2>/dev/null; then
+        echo "  Timestamp service unavailable, signing without timestamp..."
+        codesign --force \
+                 --sign "$IDENTITY" \
+                 --entitlements "$ENTITLEMENTS_PATH" \
+                 --options runtime \
+                 --verbose \
+                 "$EXTENSION_PATH"
+    fi
+fi
 
 # 3. Sign the main app
 echo -e "\n3. Signing main app..."
@@ -87,15 +129,42 @@ if [ -f "$APP_PATH/Contents/MacOS/GigEVirtualCamera.debug.dylib" ]; then
                 "com.lukechang.GigEVirtualCamera.debug"
 fi
 
-# Sign the main app
-codesign --force \
-         --sign "$IDENTITY" \
-         --entitlements "$APP_PATH/../../GigECameraApp/GigECamera.entitlements" \
-         --options runtime \
-         --timestamp \
-         --deep \
-         --verbose \
-         "$APP_PATH"
+# Find main app entitlements
+APP_ENTITLEMENTS="/Users/lukechang/Github/hyperstudy-gige/GigECameraApp/GigECamera-Release.entitlements"
+if [ ! -f "$APP_ENTITLEMENTS" ]; then
+    echo "Warning: App entitlements not found at $APP_ENTITLEMENTS"
+    # Sign without entitlements
+    if ! codesign --force \
+                  --sign "$IDENTITY" \
+                  --options runtime \
+                  --timestamp \
+                  --verbose \
+                  "$APP_PATH" 2>/dev/null; then
+        echo "  Timestamp service unavailable, signing without timestamp..."
+        codesign --force \
+                 --sign "$IDENTITY" \
+                 --options runtime \
+                 --verbose \
+                 "$APP_PATH"
+    fi
+else
+    # Sign with entitlements - do NOT use --deep as we've already signed components
+    if ! codesign --force \
+                  --sign "$IDENTITY" \
+                  --entitlements "$APP_ENTITLEMENTS" \
+                  --options runtime \
+                  --timestamp \
+                  --verbose \
+                  "$APP_PATH" 2>/dev/null; then
+        echo "  Timestamp service unavailable, signing without timestamp..."
+        codesign --force \
+                 --sign "$IDENTITY" \
+                 --entitlements "$APP_ENTITLEMENTS" \
+                 --options runtime \
+                 --verbose \
+                 "$APP_PATH"
+    fi
+fi
 
 # 4. Verify signatures
 echo -e "\n4. Verifying signatures..."

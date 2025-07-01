@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 import os.log
 
 @MainActor
@@ -15,7 +16,6 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Published Properties
     @Published var isConnected = false
-    @Published var isExtensionInstalled = false
     @Published var cameraModel = "Unknown"
     @Published var currentFormat = "1920×1080 @ 30fps"
     @Published var availableCameras: [AravisCamera] = []
@@ -50,25 +50,22 @@ class CameraManager: NSObject, ObservableObject {
     // MARK: - Private Properties
     private let cmioFrameSender = CMIOFrameSender()
     private var isFrameSenderConnected = false
+    private var frameCount: Int = 0
     
     // MARK: - Computed Properties
     var statusText: String {
         if isConnected {
             return "Connected"
-        } else if isExtensionInstalled {
-            return "No Camera"
         } else {
-            return "Extension Not Installed"
+            return "No Camera"
         }
     }
     
     var statusColor: Color {
         if isConnected {
             return DesignSystem.Colors.statusGreen
-        } else if isExtensionInstalled {
-            return DesignSystem.Colors.statusOrange
         } else {
-            return DesignSystem.Colors.textSecondary
+            return DesignSystem.Colors.statusOrange
         }
     }
     
@@ -79,35 +76,15 @@ class CameraManager: NSObject, ObservableObject {
         super.init()
         setupNotifications()
         setupFrameSender()
-        // Delay checking extension status to ensure UI is ready
+        
+        // Check for available cameras after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.checkExtensionStatus()
+            self.checkCameraConnection()
         }
     }
-    
-    // MARK: - Extension Management
-    // CMIOExtensions are automatically loaded when app is in /Applications
-    // No manual installation/uninstallation needed
     
     // MARK: - Private Methods
-    private func checkExtensionStatus() {
-        // CMIOExtensions are automatically loaded when app is in /Applications
-        // No need for system extension activation
-        
-        // Check if we're running from /Applications
-        let appPath = Bundle.main.bundlePath
-        if appPath.hasPrefix("/Applications/") {
-            logger.info("Running from /Applications - CMIOExtension should be available")
-            isExtensionInstalled = true
-            UserDefaults.standard.set(true, forKey: CameraConstants.UserDefaultsKeys.isExtensionInstalled)
-        } else {
-            logger.warning("Not running from /Applications - CMIOExtension may not load")
-            logger.warning("Current path: \(appPath)")
-            isExtensionInstalled = false
-        }
-        
-        checkCameraConnection()
-    }
+    private var cancellables = Set<AnyCancellable>()
     
     
     private func checkCameraConnection() {
@@ -260,28 +237,42 @@ class CameraManager: NSObject, ObservableObject {
         // Set up frame handler to send frames to extension
         let gigEManager = GigECameraManager.shared
         gigEManager.addFrameHandler { [weak self] pixelBuffer in
-            self?.cmioFrameSender.sendFrame(pixelBuffer)
+            guard let self = self else { return }
+            
+            if self.isFrameSenderConnected {
+                self.cmioFrameSender.sendFrame(pixelBuffer)
+            } else {
+                // Log that we're not sending frames because extension isn't connected
+                if self.frameCount % 30 == 0 {
+                    self.logger.info("Frame \(self.frameCount): Extension not connected, not sending to virtual camera")
+                }
+            }
+            self.frameCount += 1
         }
     }
     
     private func connectFrameSender() {
         // Try to connect in background
-        DispatchQueue.global(qos: .background).async { [weak self] in
+        Task.detached { [weak self] in
             guard let self = self else { return }
             
             // Wait a bit for the extension to be ready
-            Thread.sleep(forTimeInterval: 1.0)
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
             
-            if self.cmioFrameSender.connect() {
-                self.isFrameSenderConnected = true
-                self.logger.info("Successfully connected to CMIO extension")
-            } else {
-                self.logger.warning("Failed to connect to CMIO extension - will show test pattern")
-                
-                // Retry after a delay
-                DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 5.0) {
-                    self.connectFrameSender()
+            let connected = await self.cmioFrameSender.connect()
+            await MainActor.run {
+                self.isFrameSenderConnected = connected
+                if connected {
+                    self.logger.info("Successfully connected to CMIO extension")
+                } else {
+                    self.logger.warning("Failed to connect to CMIO extension - will show test pattern")
                 }
+            }
+            
+            if !connected {
+                // Retry after a delay
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                await self.connectFrameSender()
             }
         }
     }

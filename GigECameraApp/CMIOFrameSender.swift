@@ -236,15 +236,15 @@ class CMIOFrameSender: NSObject {
     
     private func getDeviceName(deviceID: CMIODeviceID) -> String? {
         var propertyAddress = CMIOObjectPropertyAddress(
-            mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceUID),
-            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeWildcard),
-            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementWildcard)
+            mSelector: CMIOObjectPropertySelector(kCMIOObjectPropertyName),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
         )
         
         var dataSize: UInt32 = 0
         var dataUsed: UInt32 = 0
         
-        var result = CMIOObjectGetPropertyDataSize(
+        let result = CMIOObjectGetPropertyDataSize(
             deviceID,
             &propertyAddress,
             0,
@@ -255,7 +255,7 @@ class CMIOFrameSender: NSObject {
         guard result == kCMIOHardwareNoError else { return nil }
         
         var name: CFString = "" as CFString
-        result = CMIOObjectGetPropertyData(
+        let nameResult = CMIOObjectGetPropertyData(
             deviceID,
             &propertyAddress,
             0,
@@ -265,7 +265,7 @@ class CMIOFrameSender: NSObject {
             &name
         )
         
-        guard result == kCMIOHardwareNoError else { return nil }
+        guard nameResult == kCMIOHardwareNoError else { return nil }
         
         return name as String
     }
@@ -317,8 +317,40 @@ class CMIOFrameSender: NSObject {
             return nil
         }
         
-        // Return the first stream (should be our sink)
-        return streams.first
+        // Find the sink stream by checking direction
+        for streamID in streams {
+            var directionAddress = CMIOObjectPropertyAddress(
+                mSelector: CMIOObjectPropertySelector(kCMIOStreamPropertyDirection),
+                mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+                mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+            )
+            
+            var direction: UInt32 = 0
+            let directionSize = UInt32(MemoryLayout<UInt32>.size)
+            var directionUsed: UInt32 = 0
+            
+            let dirResult = CMIOObjectGetPropertyData(
+                streamID,
+                &directionAddress,
+                0,
+                nil,
+                directionSize,
+                &directionUsed,
+                &direction
+            )
+            
+            if dirResult == kCMIOHardwareNoError {
+                logger.info("Stream \(streamID) direction: \(direction)")
+                // Direction 1 = sink (input to device), 0 = source (output from device)
+                if direction == 1 {
+                    logger.info("Found sink stream: \(streamID)")
+                    return streamID
+                }
+            }
+        }
+        
+        logger.error("No sink stream found on device")
+        return nil
     }
     
     private func startStreamAndGetQueue() -> Bool {
@@ -326,38 +358,40 @@ class CMIOFrameSender: NSObject {
             return false
         }
         
+        // Get the stream's queue using CMIOStreamCopyBufferQueue
+        var queue: Unmanaged<CMSimpleQueue>?
+        let queueResult = CMIOStreamCopyBufferQueue(
+            streamID,
+            { (streamID, token, refCon) in
+                // This callback is invoked when the queue state changes
+                // We don't need to handle it for simple enqueuing
+            },
+            nil,
+            &queue
+        )
+        
+        guard queueResult == kCMIOHardwareNoError else {
+            logger.error("Failed to get stream queue: \(queueResult)")
+            return false
+        }
+        
+        guard let q = queue else {
+            logger.error("Stream queue is nil")
+            return false
+        }
+        
+        streamQueue = q
+        logger.info("Successfully obtained stream queue")
+        
         // Start the stream
         let result = CMIODeviceStartStream(deviceID, streamID)
         guard result == kCMIOHardwareNoError else {
             logger.error("Failed to start stream: \(result)")
+            streamQueue = nil
             return false
         }
         
-        // Get the stream's queue
-        var propertyAddress = CMIOObjectPropertyAddress(
-            mSelector: CMIOObjectPropertySelector(kCMIOStreamPropertyFormatDescription),
-            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
-            mElement: CMIOObjectPropertyElement(0)
-        )
-        
-        var queuePropertyAddress = CMIOObjectPropertyAddress(
-            mSelector: CMIOObjectPropertySelector(kCMIOStreamPropertyOutputBufferQueueSize),
-            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
-            mElement: CMIOObjectPropertyElement(0)
-        )
-        
-        // Note: Getting the actual queue reference is complex and may require
-        // additional implementation. For now, we'll assume the stream is ready.
-        
-        // Create a placeholder queue for testing
-        var queue: CMSimpleQueue?
-        let queueResult = CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: 30, queueOut: &queue)
-        
-        if queueResult == noErr, let q = queue {
-            streamQueue = Unmanaged.passRetained(q)
-            return true
-        }
-        
-        return false
+        logger.info("Stream started successfully")
+        return true
     }
 }

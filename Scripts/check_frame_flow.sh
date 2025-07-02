@@ -1,41 +1,23 @@
-#!/bin/bash
+#\!/bin/bash
 
-echo "=== Checking Frame Flow ==="
+echo "Checking GigE Virtual Camera Frame Flow"
+echo "======================================="
+
+# Check if test camera is connected
+echo -e "\n1. Checking camera connection status..."
+defaults read com.lukechang.GigEVirtualCamera lastConnectedCamera 2>/dev/null || echo "No last connected camera"
+
+# Check shared defaults for frame data
+echo -e "\n2. Checking shared frame data..."
+defaults read group.S368GH6KF7.com.lukechang.GigEVirtualCamera 2>/dev/null || echo "No shared frame data"
+
+# Monitor real-time logs
+echo -e "\n3. Monitoring frame flow (press Ctrl+C to stop)..."
+echo "Looking for:"
+echo "  - 'Starting acquisition' (camera starts)"
+echo "  - 'Wrote frame' (app writes frame)"
+echo "  - 'Cached frame' (extension reads frame)"
+echo "  - 'Frame #' (extension sends frame)"
 echo ""
 
-# Check if both processes are running
-echo "1. Process Status:"
-ps aux | grep -E "(GigEVirtualCamera|GigECameraExtension)" | grep -v grep | awk '{print "   " $11}'
-
-echo ""
-echo "2. Recent Frame Activity (last 10 seconds):"
-
-# Create a temporary file for logs
-TMPFILE=$(mktemp)
-
-# Capture logs for 5 seconds
-log stream --predicate '(subsystem == "com.lukechang.GigEVirtualCamera" OR subsystem == "com.lukechang.GigEVirtualCamera.Extension") AND (message CONTAINS "frame" OR message CONTAINS "Frame" OR message CONTAINS "Sending" OR message CONTAINS "Received")' --style compact > "$TMPFILE" &
-LOG_PID=$!
-
-sleep 5
-kill $LOG_PID 2>/dev/null
-
-# Process the logs
-echo "   App -> Extension:"
-grep -i "sending frame\|enqueued frame" "$TMPFILE" | tail -5
-
-echo ""
-echo "   Extension Receiving:"
-grep -i "received frame\|sink stream" "$TMPFILE" | tail -5
-
-echo ""
-echo "   Extension -> Photo Booth:"
-grep -i "forwarding frame\|sending frame.*photo" "$TMPFILE" | tail -5
-
-# Clean up
-rm -f "$TMPFILE"
-
-echo ""
-echo "3. Queue Status:"
-# Try to get queue status from recent logs
-log show --predicate 'message CONTAINS "Queue status"' --last 30s 2>/dev/null | tail -3
+log stream --predicate 'eventMessage contains "frame" OR eventMessage contains "Frame" OR eventMessage contains "acquisition" OR eventMessage contains "streaming"' --info | grep -E "(GigEVirtualCamera|GigECameraExtension)"

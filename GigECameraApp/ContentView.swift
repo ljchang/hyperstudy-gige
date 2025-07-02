@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import IOSurface
 
 struct ContentView: View {
     @EnvironmentObject var cameraManager: CameraManager
@@ -63,25 +64,7 @@ struct ContentView: View {
                         }
                     }
                     
-                    // Debug button to reconnect frame sender
-                    if extensionManager.extensionStatus == "Installed" && !cameraManager.isFrameSenderConnected {
-                        Button(action: {
-                            cameraManager.retryFrameSenderConnection()
-                        }) {
-                            Label("Connect to Virtual Camera", systemImage: "arrow.triangle.2.circlepath")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    
-                    // Test XPC button
-                    if extensionManager.extensionStatus == "Installed" {
-                        Button(action: {
-                            cameraManager.testXPCConnection()
-                        }) {
-                            Label("Test XPC Connection", systemImage: "antenna.radiowaves.left.and.right")
-                        }
-                        .buttonStyle(.bordered)
-                    }
+                    // No need for connection button - IOSurface writer is always ready
                     
                     // Debug feedback area
                     if !extensionManager.statusMessage.isEmpty {
@@ -147,6 +130,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, DesignSystem.Spacing.large)
                 }
+                
                 
                 // Status section
                 VStack(spacing: DesignSystem.Spacing.medium) {
@@ -246,6 +230,7 @@ struct ContentView: View {
         .frame(minHeight: cameraManager.isShowingPreview ? 800 : 500)
         .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
     }
+    
 }
 
 // MARK: - Header View

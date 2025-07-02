@@ -12,7 +12,7 @@ import Combine
 // Using stub implementation for now
 // When Aravis is properly integrated, remove the stub
 
-class GigECameraManager: NSObject, ObservableObject {
+@objc class GigECameraManager: NSObject, ObservableObject {
     static let shared = GigECameraManager()
     
     @Published var isConnected = false
@@ -33,6 +33,7 @@ class GigECameraManager: NSObject, ObservableObject {
     override init() {
         super.init()
         aravisBridge.delegate = self
+        print("GigECameraManager: Set aravisBridge delegate to self")
         discoverCameras()
     }
     
@@ -211,15 +212,16 @@ class GigECameraManager: NSObject, ObservableObject {
 // MARK: - AravisBridgeDelegate
 
 extension GigECameraManager: AravisBridgeDelegate {
-    func aravisBridge(_ bridge: Any, didReceiveFrame pixelBuffer: CVPixelBuffer) {
+    @objc func aravisBridge(_ bridge: Any, didReceiveFrame pixelBuffer: CVPixelBuffer) {
+        print("GigECameraManager: 🎯 didReceiveFrame called!")
         // Notify all frame handlers
         if frameHandlers.isEmpty {
-            print("GigECameraManager: Received frame but no handlers registered")
+            print("GigECameraManager: ⚠️ Received frame but no handlers registered!")
         } else {
             // Only log every 30th frame to avoid spam
             frameDistributionCount += 1
-            if frameDistributionCount % 30 == 1 {
-                print("GigECameraManager: Distributing frame #\(frameDistributionCount) to \(frameHandlers.count) handlers")
+            if frameDistributionCount == 1 || frameDistributionCount % 30 == 0 {
+                print("GigECameraManager: 📹 Distributing frame #\(frameDistributionCount) to \(frameHandlers.count) handlers")
             }
             for handler in frameHandlers {
                 handler(pixelBuffer)
@@ -227,7 +229,7 @@ extension GigECameraManager: AravisBridgeDelegate {
         }
     }
     
-    func aravisBridge(_ bridge: Any, didChange state: AravisCameraState) {
+    @objc func aravisBridge(_ bridge: Any, didChange state: AravisCameraState) {
         DispatchQueue.main.async { [weak self] in
             switch state {
             case .disconnected:
@@ -251,7 +253,7 @@ extension GigECameraManager: AravisBridgeDelegate {
         }
     }
     
-    func aravisBridge(_ bridge: Any, didEncounterError error: Error) {
+    @objc func aravisBridge(_ bridge: Any, didEncounterError error: Error) {
         DispatchQueue.main.async { [weak self] in
             self?.lastError = error
             print("Camera error: \(error.localizedDescription)")

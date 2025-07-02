@@ -75,20 +75,39 @@ class ExtensionManager: NSObject, ObservableObject {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 if let output = String(data: data, encoding: .utf8) {
                     DispatchQueue.main.async {
-                        if output.contains("com.lukechang.GigEVirtualCamera.Extension") {
-                            if output.contains("[activated enabled]") {
-                                self?.extensionStatus = "Installed"
-                                self?.statusMessage = "Extension is installed and active"
-                                self?.logger.info("Extension is already installed")
-                                // Trigger the extension to start
-                                self?.triggerExtensionStart()
-                            } else if output.contains("[terminated waiting") {
-                                self?.extensionStatus = "Pending Uninstall"
-                                self?.statusMessage = "Extension waiting to uninstall"
-                            } else {
-                                self?.extensionStatus = "Not Active"
-                                self?.statusMessage = "Extension found but not active"
+                        // Count active vs pending uninstall extensions
+                        let lines = output.components(separatedBy: .newlines)
+                        var hasActiveExtension = false
+                        var pendingUninstallCount = 0
+                        var totalExtensionCount = 0
+                        
+                        for line in lines {
+                            if line.contains("com.lukechang.GigEVirtualCamera.Extension") {
+                                totalExtensionCount += 1
+                                if line.contains("[activated enabled]") {
+                                    hasActiveExtension = true
+                                } else if line.contains("[terminated waiting") {
+                                    pendingUninstallCount += 1
+                                }
                             }
+                        }
+                        
+                        if hasActiveExtension {
+                            self?.extensionStatus = "Installed"
+                            if pendingUninstallCount > 0 {
+                                self?.statusMessage = "Extension is active (with \(pendingUninstallCount) old version(s) pending removal)"
+                            } else {
+                                self?.statusMessage = "Extension is installed and active"
+                            }
+                            self?.logger.info("Extension is already installed")
+                            // Trigger the extension to start
+                            self?.triggerExtensionStart()
+                        } else if pendingUninstallCount > 0 {
+                            self?.extensionStatus = "Pending Uninstall"
+                            self?.statusMessage = "\(pendingUninstallCount) extension(s) waiting to uninstall"
+                        } else if totalExtensionCount > 0 {
+                            self?.extensionStatus = "Not Active"
+                            self?.statusMessage = "Extension found but not active"
                         } else {
                             self?.extensionStatus = "Not Installed"
                             self?.statusMessage = "Extension not found in system"
@@ -160,19 +179,40 @@ extension ExtensionManager: OSSystemExtensionRequestDelegate {
     
     func request(_ request: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
         isInstalling = false
+        
+        // Check if this was an uninstall request
+        let isUninstallRequest = extensionStatus == "Uninstalling..."
+        
         switch result {
         case .completed:
-            logger.info("Extension installation completed")
-            extensionStatus = "Installed"
-            statusMessage = "✅ didFinishWithResult: completed"
+            if isUninstallRequest {
+                logger.info("Extension uninstallation completed")
+                extensionStatus = "Not Installed"
+                statusMessage = "✅ Extension uninstalled successfully"
+            } else {
+                logger.info("Extension installation completed")
+                extensionStatus = "Installed"
+                statusMessage = "✅ didFinishWithResult: completed"
+            }
         case .willCompleteAfterReboot:
-            logger.info("Extension will complete after reboot")
-            extensionStatus = "Reboot Required"
-            statusMessage = "🔄 didFinishWithResult: willCompleteAfterReboot"
+            if isUninstallRequest {
+                logger.info("Extension uninstall will complete after reboot")
+                extensionStatus = "Pending Uninstall"
+                statusMessage = "🔄 Uninstall will complete after reboot"
+            } else {
+                logger.info("Extension will complete after reboot")
+                extensionStatus = "Reboot Required"
+                statusMessage = "🔄 didFinishWithResult: willCompleteAfterReboot"
+            }
         @unknown default:
             logger.error("Unknown installation result")
             extensionStatus = "Unknown Status"
             statusMessage = "❓ didFinishWithResult: unknown result"
+        }
+        
+        // Re-check extension status after a delay to ensure accurate state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.checkExtensionStatus()
         }
     }
     

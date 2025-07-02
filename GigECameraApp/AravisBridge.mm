@@ -95,6 +95,11 @@ static CVPixelBufferRef CreateIOSurfaceBackedPixelBuffer(size_t width, size_t he
     return self;
 }
 
+- (void)setDelegate:(id<AravisBridgeDelegate>)delegate {
+    _delegate = delegate;
+    NSLog(@"AravisBridge: Delegate set to %@", delegate ? NSStringFromClass([delegate class]) : @"nil");
+}
+
 - (void)dealloc {
     [self disconnect];
 }
@@ -573,7 +578,11 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
         }
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.delegate aravisBridge:self didReceiveFrame:pixelBuffer];
+            if (self.delegate) {
+                [self.delegate aravisBridge:self didReceiveFrame:pixelBuffer];
+            } else {
+                NSLog(@"AravisBridge: WARNING - No delegate set, dropping frame!");
+            }
             CVPixelBufferRelease(pixelBuffer);
         });
     } else {

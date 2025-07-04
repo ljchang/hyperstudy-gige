@@ -10,6 +10,13 @@ import SwiftUI
 import Combine
 import os.log
 
+// UserDefaults extension for KVO
+extension UserDefaults {
+    @objc dynamic var StreamState: [String: Any]? {
+        return dictionary(forKey: "StreamState")
+    }
+}
+
 @MainActor
 class CameraManager: NSObject, ObservableObject {
     static let shared = CameraManager()
@@ -46,11 +53,13 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     @Published var isShowingPreview = false
-    @Published var isFrameSenderConnected = true  // IOSurface writer is always connected
+    @Published var isFrameSenderConnected = false  // Will be set true when sink connects
     
     // MARK: - Private Properties
-    let frameWriter = IOSurfaceFrameWriter()  // Made non-private for debug access
+    private let sinkConnector = CMIOSinkConnector()
     private var frameCount: Int = 0
+    private var streamStateObserver: NSKeyValueObservation?
+    private let appGroupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera")
     
     // MARK: - Computed Properties
     var statusText: String {
@@ -82,6 +91,10 @@ class CameraManager: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.checkCameraConnection()
         }
+    }
+    
+    deinit {
+        streamStateObserver?.invalidate()
     }
     
     // MARK: - Private Methods
@@ -190,6 +203,25 @@ class CameraManager: NSObject, ObservableObject {
             name: NSNotification.Name("TriggerFrameSenderConnection"),
             object: nil
         )
+        
+        // Monitor App Group UserDefaults for stream state changes
+        if let defaults = appGroupDefaults {
+            // Use KVO to monitor changes
+            streamStateObserver = defaults.observe(\.StreamState, options: [.new, .initial]) { [weak self] _, _ in
+                self?.handleStreamStateChange()
+            }
+            
+            // Also use notification as backup
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleStreamStateChange),
+                name: UserDefaults.didChangeNotification,
+                object: defaults
+            )
+            
+            // Check initial state
+            handleStreamStateChange()
+        }
     }
     
     @objc private func handleCameraConnection(_ notification: Notification) {
@@ -245,6 +277,33 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
+    @objc private func handleStreamStateChange() {
+        // Check if extension is requesting frames
+        guard let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera"),
+              let state = defaults.dictionary(forKey: "StreamState"),
+              let isActive = state["streamActive"] as? Bool else {
+            return
+        }
+        
+        if isActive {
+            logger.info("Extension requesting frames")
+            
+            // The property listener will handle sink connection automatically
+            // We just need to ensure Aravis is streaming
+            if isConnected && !GigECameraManager.shared.isStreaming {
+                logger.info("Starting Aravis streaming in response to extension request")
+                GigECameraManager.shared.startStreaming()
+            }
+        } else {
+            logger.info("Extension stopped requesting frames")
+            // Optionally stop streaming
+            if GigECameraManager.shared.isStreaming {
+                logger.info("Stopping Aravis streaming")
+                GigECameraManager.shared.stopStreaming()
+            }
+        }
+    }
+    
     // MARK: - Preview Methods
     func togglePreview() {
         if isShowingPreview {
@@ -256,40 +315,24 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Public Methods for Frame Sender
     func retryFrameSenderConnection() {
-        logger.info("IOSurface writer is always ready")
-        // IOSurface writer doesn't need connection - just start streaming if needed
-        if isConnected && !GigECameraManager.shared.isStreaming {
-            logger.info("Starting camera streaming...")
-            GigECameraManager.shared.startStreaming()
-        }
+        logger.info("Retrying CMIO sink connection...")
+        
+        // With property listeners, we just need to restart the listener
+        sinkConnector.disconnect()
+        
+        // The property listener will automatically detect and connect when sink is available
+        logger.info("Property listener will automatically reconnect when sink stream is available")
     }
     
     func testSinkStreamConnection() {  // Keep method name for compatibility
-        logger.info("Starting virtual camera...")
+        logger.info("Testing CMIO sink stream connection...")
         
-        // Disconnect first if connected
+        // The property listener handles connection automatically
         if isFrameSenderConnected {
-            // Reset frame writer for next session
-            frameWriter.reset()
-            isFrameSenderConnected = false
-        }
-        
-        // IOSurface writer is always ready
-        if true {  // Always succeeds with IOSurface approach
-            isFrameSenderConnected = true
-            logger.info("✅ CMIO sink stream connection successful!")
-            
-            // Start streaming if camera is connected
-            if isConnected && !GigECameraManager.shared.isStreaming {
-                logger.info("Starting camera streaming after sink connection...")
-                GigECameraManager.shared.startStreaming()
-            }
-            
-            // Try sending a test frame
+            logger.info("✅ Already connected to sink stream via property listener")
             sendTestFrame()
         } else {
-            isFrameSenderConnected = false
-            logger.error("❌ CMIO sink stream connection failed - virtual camera not found or sink stream not available")
+            logger.info("⏳ Waiting for sink stream discovery via property listener...")
         }
     }
     
@@ -325,7 +368,7 @@ class CameraManager: NSObject, ObservableObject {
         CVPixelBufferUnlockBaseAddress(testBuffer, [])
         
         logger.info("Sending test frame...")
-        frameWriter.writeFrame(testBuffer)
+        sinkConnector.sendFrame(testBuffer)
     }
     
     private func showPreview() {
@@ -355,17 +398,67 @@ class CameraManager: NSObject, ObservableObject {
         gigEManager.addFrameHandler { [weak self] pixelBuffer in
             guard let self = self else { return }
             
-            // Write frame to shared IOSurface
-            self.frameWriter.writeFrame(pixelBuffer)
-            self.frameCount += 1
-            
-            // Log first frame
-            if self.frameCount == 1 {
-                self.logger.info("First frame received in handler!")
+            // Send frame through CMIO sink if connected
+            if self.isFrameSenderConnected {
+                self.sinkConnector.sendFrame(pixelBuffer)
+                self.frameCount += 1
+                
+                // Log first frame and periodic updates
+                if self.frameCount == 1 {
+                    self.logger.info("First frame sent to CMIO sink!")
+                } else if self.frameCount % 300 == 0 {
+                    self.logger.info("Sent \(self.frameCount) frames to CMIO sink")
+                }
+            } else {
+                // Log why we're not sending
+                if self.frameCount % 30 == 0 {
+                    self.logger.warning("Not sending frames - isFrameSenderConnected = false")
+                }
             }
         }
         
-        logger.info("Frame handler setup complete - ready to write frames to IOSurface")
+        // Set up callbacks for automatic sink connection
+        setupSinkConnectorCallbacks()
+        
+        // Start the connection process
+        logger.info("Starting sink connector connection...")
+        let connected = sinkConnector.connect()
+        logger.info("Initial sink connector connect returned: \(connected)")
+        
+        logger.info("Frame handler setup complete - waiting for sink stream discovery")
+    }
+    
+    private func setupSinkConnectorCallbacks() {
+        // Called when sink stream becomes available
+        sinkConnector.onSinkStreamAvailable = { [weak self] available in
+            guard let self = self else { return }
+            
+            self.logger.info("Sink stream availability changed: \(available)")
+            
+            if available && self.isConnected && !GigECameraManager.shared.isStreaming {
+                self.logger.info("Sink stream available - starting Aravis streaming automatically")
+                GigECameraManager.shared.startStreaming()
+            }
+        }
+        
+        // Called when connection state changes
+        sinkConnector.onConnectionStateChanged = { [weak self] connected in
+            guard let self = self else { return }
+            
+            self.isFrameSenderConnected = connected
+            
+            if connected {
+                self.logger.info("✅ Sink connector connected via property listener callback!")
+                
+                // Start Aravis streaming if camera is connected but not streaming
+                if self.isConnected && !GigECameraManager.shared.isStreaming {
+                    self.logger.info("Starting Aravis streaming after sink connection")
+                    GigECameraManager.shared.startStreaming()
+                }
+            } else {
+                self.logger.warning("⚠️ Sink connector disconnected")
+            }
+        }
     }
     
     func getPerformanceMetrics() -> (fps: Double, framesTotal: UInt64, framesDropped: UInt64) {

@@ -2,201 +2,609 @@
 //  GigEVirtualCameraExtensionProvider.swift
 //  GigEVirtualCameraExtension
 //
-//  CMIO Extension with custom properties for IOSurface sharing
+//  CMIO Extension with sink/source stream architecture
 //
 
 import Foundation
 import CoreMediaIO
 import IOKit.audio
-import IOSurface
 import os.log
 
-// MARK: - Frame Coordinator
+// MARK: - Stream State Coordinator
 
-class FrameCoordinator {
-    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "FrameCoordinator")
+class StreamStateCoordinator {
+    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "StreamState")
     private let appGroupID = "group.S368GH6KF7.com.lukechang.GigEVirtualCamera"
-    private let surfaceIDsKey = "IOSurfaceIDs"
-    private let frameIndexKey = "currentFrameIndex"
     
     private var groupDefaults: UserDefaults? {
         UserDefaults(suiteName: appGroupID)
     }
     
-    func shareSurfaceIDs(_ surfaceIDs: [IOSurfaceID]) {
-        print("🔵 FrameCoordinator.shareSurfaceIDs called with: \(surfaceIDs)")
-        
+    func signalNeedFrames() {
         guard let defaults = groupDefaults else {
             logger.error("Failed to access App Group UserDefaults")
-            print("❌ FrameCoordinator: Failed to access App Group UserDefaults!")
             return
         }
         
-        let idArray = surfaceIDs.map { NSNumber(value: $0) }
-        defaults.set(idArray, forKey: surfaceIDsKey)
-        let success = defaults.synchronize()
+        let state = [
+            "streamActive": true,
+            "timestamp": Date().timeIntervalSince1970,
+            "pid": ProcessInfo.processInfo.processIdentifier
+        ] as [String : Any]
         
-        logger.info("Shared \(surfaceIDs.count) IOSurface IDs via App Groups: \(surfaceIDs)")
-        print("🔵 FrameCoordinator: Shared \(surfaceIDs.count) IOSurface IDs, synchronize = \(success)")
-        
-        // Double-check it was saved
-        if let saved = defaults.array(forKey: surfaceIDsKey) {
-            print("🔵 FrameCoordinator: Verified save - found \(saved.count) IDs in UserDefaults")
-        } else {
-            print("❌ FrameCoordinator: Failed to verify save!")
-        }
-    }
-    
-    func clearSharedData() {
-        guard let defaults = groupDefaults else { return }
-        defaults.removeObject(forKey: surfaceIDsKey)
-        defaults.removeObject(forKey: frameIndexKey)
+        defaults.set(state, forKey: "StreamState")
         defaults.synchronize()
+        
+        logger.info("Signaled app to start sending frames")
     }
     
-    func readFrameIndex() -> Int {
-        guard let defaults = groupDefaults else { return -1 }
-        return defaults.integer(forKey: frameIndexKey)
+    func signalStreamStopped() {
+        guard let defaults = groupDefaults else { return }
+        
+        defaults.removeObject(forKey: "StreamState")
+        defaults.synchronize()
+        
+        logger.info("Signaled app to stop sending frames")
     }
 }
 
-// MARK: - Shared Memory Frame Pool
+// MARK: - Sink Stream Source
 
-class SharedMemoryFramePool {
-    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "FramePool")
-    private let poolSize = 1  // Simplified to single buffer for debugging
-    private var surfaces: [IOSurface] = []
-    private var currentIndex = 0
-    private let lock = NSLock()
-    private let frameCoordinator = FrameCoordinator()
+class SinkStreamSource: NSObject, CMIOExtensionStreamSource {
     
-    init() {
-        NSLog("🚀 GigEVirtualCamera: SharedMemoryFramePool initializing...")
+    private(set) var stream: CMIOExtensionStream!
+    private let device: CMIOExtensionDevice
+    private let streamFormat: CMIOExtensionStreamFormat
+    private var client: CMIOExtensionClient?
+    
+    // Closure set by DeviceSource to handle received buffers
+    var consumeSampleBuffer: ((CMSampleBuffer) -> Void)?
+    
+    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "SinkStream")
+    
+    init(localizedName: String, streamID: UUID, streamFormat: CMIOExtensionStreamFormat, device: CMIOExtensionDevice) {
+        self.device = device
+        self.streamFormat = streamFormat
+        super.init()
         
-        // Debug: Write to UserDefaults to verify init is called
-        if let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
-            defaults.set("SharedMemoryFramePool init called at \(Date())", forKey: "Debug_PoolInit")
-            defaults.synchronize()
-        }
+        // Create sink stream
+        self.stream = CMIOExtensionStream(
+            localizedName: localizedName,
+            streamID: streamID,
+            direction: .sink,
+            clockType: .hostTime,
+            source: self
+        )
         
-        createSurfacePool()
+        logger.info("Sink stream initialized: \(localizedName)")
     }
     
-    private func createSurfacePool() {
-        NSLog("🟢 GigEVirtualCamera: createSurfacePool starting...")
-        let width = 512
-        let height = 512
+    var formats: [CMIOExtensionStreamFormat] {
+        return [streamFormat]
+    }
+    
+    var activeFormatIndex: Int = 0
+    
+    var availableProperties: Set<CMIOExtensionProperty> {
+        return [.streamActiveFormatIndex]
+    }
+    
+    func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
+        let streamProperties = CMIOExtensionStreamProperties(dictionary: [:])
+        if properties.contains(.streamActiveFormatIndex) {
+            streamProperties.activeFormatIndex = activeFormatIndex
+        }
+        return streamProperties
+    }
+    
+    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
+        if let index = streamProperties.activeFormatIndex {
+            self.activeFormatIndex = index
+        }
+    }
+    
+    func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
+        // Store the client reference
+        self.client = client
+        logger.info("Client authorized to start sink stream: PID \(client.pid)")
+        return true
+    }
+    
+    func startStream() throws {
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
+            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
+        }
         
-        for i in 0..<poolSize {
-            let properties: [String: Any] = [
-                kIOSurfaceWidth as String: width,
-                kIOSurfaceHeight as String: height,
-                kIOSurfaceBytesPerElement as String: 4,
-                kIOSurfaceBytesPerRow as String: width * 4,
-                kIOSurfaceAllocSize as String: width * height * 4,
-                kIOSurfacePixelFormat as String: kCVPixelFormatType_32BGRA,
-                kIOSurfaceIsGlobal as String: true  // Make surface global for cross-process access
-            ]
+        // Write debug marker to UserDefaults
+        if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
+            groupDefaults.set("Sink stream started at \(Date())", forKey: "Debug_SinkStreamStarted")
+            groupDefaults.synchronize()
+        }
+        
+        NSLog("🟢🟢🟢 SINK STREAM STARTING - Client PID: \(self.client?.pid ?? 0)")
+        logger.info("🟢 Starting sink stream")
+        logger.info("Client info - PID: \(self.client?.pid ?? 0)")
+        
+        // Notify device source that sink is starting
+        deviceSource.startSinkStreaming()
+        
+        // Begin consuming buffers
+        logger.info("Beginning buffer consumption...")
+        NSLog("🟢🟢🟢 Beginning sink buffer consumption...")
+        try subscribe()
+    }
+    
+    func stopStream() throws {
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
+            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
+        }
+        
+        logger.info("Stopping sink stream")
+        
+        // Stop subscribing
+        isSubscribing = false
+        
+        // Notify device source that sink is stopping
+        deviceSource.stopSinkStreaming()
+    }
+    
+    private var isSubscribing = false
+    
+    private func subscribe() throws {
+        guard let client = self.client else {
+            logger.error("No client available for subscription")
+            NSLog("❌❌❌ No client available for subscription")
+            return
+        }
+        
+        guard !isSubscribing else { 
+            logger.warning("Already subscribing - skipping duplicate subscription")
+            return 
+        }
+        isSubscribing = true
+        
+        logger.info("🔵 Sink subscribing to consume buffers from client PID: \(client.pid)")
+        NSLog("🔵🔵🔵 SINK SUBSCRIBING - Client PID: \(client.pid)")
+        
+        // Start consuming buffers - this will be called repeatedly by CMIO
+        consumeNextBuffer()
+    }
+    
+    private func consumeNextBuffer() {
+        guard isSubscribing, let client = self.client else { 
+            NSLog("⚠️⚠️⚠️ Stopping consumption - subscribing: \(isSubscribing), client: \(client != nil)")
+            return 
+        }
+        
+        // Consume buffers from the client
+        stream.consumeSampleBuffer(from: client) { [weak self] (sampleBuffer, sequenceNumber, discontinuity, hasMoreSampleBuffers, error) in
+            guard let self = self else {
+                NSLog("❌❌❌ self is nil in callback")
+                return
+            }
             
-            if let surface = IOSurfaceCreate(properties as CFDictionary) {
-                surfaces.append(surface)
-                let surfaceID = IOSurfaceGetID(surface)
-                NSLog("🟢 GigEVirtualCamera: Created IOSurface \(i+1)/\(self.poolSize) with ID: \(surfaceID)")
+            if let error = error {
+                NSLog("❌❌❌ Error consuming sample buffer: \(error.localizedDescription)")
+                self.logger.error("❌ Error consuming sample buffer: \(error.localizedDescription)")
+                
+                // Try to recover by re-subscribing after a delay
+                if self.isSubscribing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.consumeNextBuffer()
+                    }
+                }
+                return
+            }
+            
+            if let sampleBuffer = sampleBuffer {
+                // We have a real frame!
+                NSLog("✅✅✅ consumeSampleBuffer received REAL frame! seq:\(sequenceNumber) hasMore:\(hasMoreSampleBuffers)")
+                
+                // Write debug marker for first frame
+                if sequenceNumber == 0 {
+                    if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
+                        groupDefaults.set("First frame received at \(Date())", forKey: "Debug_FirstFrameReceived")
+                        groupDefaults.synchronize()
+                    }
+                }
+                
+                // Log periodically for debugging
+                if sequenceNumber % 30 == 0 {
+                    // Get format info from the sample buffer
+                    if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                        let dimensions = CMVideoFormatDescriptionGetDimensions(formatDesc)
+                        let pixelFormat = CMFormatDescriptionGetMediaSubType(formatDesc)
+                        let formatString = pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ? "YUV420v" : 
+                                         pixelFormat == kCVPixelFormatType_32BGRA ? "BGRA" : "Unknown(\(pixelFormat))"
+                        NSLog("✅✅✅ Sink received frame #\(sequenceNumber) | \(dimensions.width)x\(dimensions.height) | Format: \(formatString)")
+                        self.logger.info("✅ Sink received frame #\(sequenceNumber) | \(dimensions.width)x\(dimensions.height) | Format: \(formatString)")
+                    } else {
+                        NSLog("✅✅✅ Sink received frame #\(sequenceNumber)")
+                        self.logger.info("✅ Sink received frame #\(sequenceNumber) | hasMore: \(hasMoreSampleBuffers)")
+                    }
+                }
+                
+                // Check if we have a consumer
+                if let consumeCallback = self.consumeSampleBuffer {
+                    NSLog("📤📤📤 Forwarding frame #\(sequenceNumber) to DeviceSource")
+                    self.logger.debug("Forwarding frame to DeviceSource...")
+                    consumeCallback(sampleBuffer)
+                } else {
+                    self.logger.warning("⚠️ No consumer callback set - frame will be dropped!")
+                    NSLog("⚠️⚠️⚠️ No consumer callback set!")
+                }
+                
+                // Continue consuming immediately if there are more buffers
+                if self.isSubscribing && hasMoreSampleBuffers {
+                    self.consumeNextBuffer()
+                } else if self.isSubscribing {
+                    // No more buffers right now, wait a bit before checking again
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.033) { // ~30fps
+                        self.consumeNextBuffer()
+                    }
+                }
             } else {
-                logger.error("❌ Failed to create IOSurface \(i+1)")
+                // Nil buffer means queue is empty
+                // Don't log this as it's normal when queue is empty
+                // Just wait and try again
+                if self.isSubscribing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.033) { // ~30fps
+                        self.consumeNextBuffer()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Source Stream Source
+
+class SourceStreamSource: NSObject, CMIOExtensionStreamSource {
+    
+    private(set) var stream: CMIOExtensionStream!
+    private let device: CMIOExtensionDevice
+    private let streamFormat: CMIOExtensionStreamFormat
+    
+    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "SourceStream")
+    
+    // Default frame generation
+    private var timer: Timer?
+    private var defaultPixelBuffer: CVPixelBuffer?
+    private let frameDuration = CMTime(value: 1, timescale: 30)  // 30 fps
+    
+    init(localizedName: String, streamID: UUID, streamFormat: CMIOExtensionStreamFormat, device: CMIOExtensionDevice) {
+        self.device = device
+        self.streamFormat = streamFormat
+        super.init()
+        
+        // Create source stream
+        self.stream = CMIOExtensionStream(
+            localizedName: localizedName,
+            streamID: streamID,
+            direction: .source,
+            clockType: .hostTime,
+            source: self
+        )
+        
+        // Create default pixel buffer
+        createDefaultPixelBuffer()
+        
+        logger.info("Source stream initialized: \(localizedName)")
+        
+        // Start sending default frames immediately to ensure Photo Booth can see them
+        NSLog("🎬🎬🎬 Starting default frame timer immediately on init")
+        logger.info("Starting default frame timer immediately to ensure frames are available")
+        
+        // Start immediately, don't wait
+        startDefaultFrameTimer()
+        
+        // Also send a test frame right away
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            NSLog("🎬🎬🎬 Sending initial test frame")
+            self?.sendDefaultFrame()
+        }
+    }
+    
+    var formats: [CMIOExtensionStreamFormat] {
+        return [streamFormat]
+    }
+    
+    var activeFormatIndex: Int = 0
+    
+    var availableProperties: Set<CMIOExtensionProperty> {
+        return [
+            .streamActiveFormatIndex, 
+            .streamFrameDuration,
+            .streamSinkBufferQueueSize,
+            .streamSinkBuffersRequiredForStartup
+        ]
+    }
+    
+    func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
+        let streamProperties = CMIOExtensionStreamProperties(dictionary: [:])
+        if properties.contains(.streamActiveFormatIndex) {
+            streamProperties.activeFormatIndex = activeFormatIndex
+        }
+        if properties.contains(.streamFrameDuration) {
+            streamProperties.frameDuration = frameDuration
+        }
+        if properties.contains(.streamSinkBufferQueueSize) {
+            streamProperties.sinkBufferQueueSize = 30  // 1 second of frames at 30fps
+        }
+        if properties.contains(.streamSinkBuffersRequiredForStartup) {
+            streamProperties.sinkBuffersRequiredForStartup = 1  // Minimal requirement
+        }
+        return streamProperties
+    }
+    
+    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
+        if let index = streamProperties.activeFormatIndex {
+            self.activeFormatIndex = index
+        }
+    }
+    
+    func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
+        logger.info("Client authorized to start source stream: PID \(client.pid)")
+        NSLog("🎬🎬🎬 SOURCE: authorizedToStartStream called - Client PID: \(client.pid)")
+        
+        // Option 3: Start sending frames immediately upon authorization
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
+            return true
+        }
+        
+        NSLog("🎬🎬🎬 OPTION 3: Starting frame flow immediately on authorization")
+        NSLog("🎬🎬🎬 Current sink active: \(deviceSource.isSinking)")
+        
+        // If sink is active, ensure frames are flowing to this source stream
+        if deviceSource.isSinking {
+            NSLog("🎬🎬🎬 Sink is active - frames should start flowing immediately")
+        } else {
+            NSLog("🎬🎬🎬 Sink not active - default frames should be flowing")
+        }
+        
+        return true
+    }
+    
+    func startStream() throws {
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
+            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
+        }
+        
+        // Write debug marker to UserDefaults
+        if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
+            groupDefaults.set("Source stream started at \(Date())", forKey: "Debug_SourceStreamStarted")
+            groupDefaults.synchronize()
+        }
+        
+        NSLog("🎬🎬🎬 SOURCE STREAM STARTING - Sink active: \(deviceSource.isSinking)")
+        NSLog("🎬🎬🎬 Current streamingCounter BEFORE increment: \(deviceSource.streamingCounter)")
+        logger.info("🟢 Starting source stream")
+        logger.info("Device sink active: \(deviceSource.isSinking)")
+        
+        // Notify device source
+        deviceSource.startStreaming()
+        
+        NSLog("🎬🎬🎬 Current streamingCounter AFTER increment: \(deviceSource.streamingCounter)")
+        
+        // Start timer for default frames (when sink not active)
+        logger.info("Starting default frame timer...")
+        NSLog("🎬🎬🎬 Starting default frame timer")
+        startDefaultFrameTimer()
+    }
+    
+    func stopStream() throws {
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
+            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
+        }
+        
+        logger.info("Stopping source stream")
+        
+        // Stop timer
+        stopDefaultFrameTimer()
+        
+        // Notify device source
+        deviceSource.stopStreaming()
+    }
+    
+    // Public method for DeviceSource to send frames
+    func sendSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        NSLog("📺📺📺 ENTERED SourceStreamSource.sendSampleBuffer")
+        
+        // Check if stream is nil
+        if stream == nil {
+            NSLog("❌❌❌ stream is NIL in sendSampleBuffer!")
+            logger.error("stream is nil - cannot send frame")
+            return
+        }
+        
+        // Use the sample buffer's own timing instead of overriding it
+        var timingInfo = CMSampleTimingInfo()
+        var timingInfoCount: CMItemCount = 0
+        CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &timingInfoCount)
+        
+        if timingInfoCount > 0 {
+            CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: 1, arrayToFill: &timingInfo, entriesNeededOut: nil)
+            let hostTime = CMTimeConvertScale(timingInfo.presentationTimeStamp, timescale: Int32(NSEC_PER_SEC), method: .default)
+            
+            NSLog("📺📺📺 SourceStreamSource.sendSampleBuffer called - using buffer's timing")
+            logger.debug("🚀 Source sending frame to clients | buffer time: \(timingInfo.presentationTimeStamp.seconds)")
+            
+            stream.send(
+                sampleBuffer,
+                discontinuity: [],
+                hostTimeInNanoseconds: UInt64(hostTime.value)
+            )
+        } else {
+            // Fallback to current time if no timing info
+            let now = CMClockGetTime(CMClockGetHostTimeClock())
+            
+            NSLog("📺📺📺 SourceStreamSource.sendSampleBuffer called - using current time")
+            logger.debug("🚀 Source sending frame to clients | current time: \(now.seconds)")
+            
+            stream.send(
+                sampleBuffer,
+                discontinuity: [],
+                hostTimeInNanoseconds: UInt64(now.seconds * Double(NSEC_PER_SEC))
+            )
+        }
+        
+        logger.debug("✅ Frame sent to source stream")
+        NSLog("📺📺📺 Frame sent to CMIO source stream")
+    }
+    
+    private func createDefaultPixelBuffer() {
+        let width = Int(streamFormat.formatDescription.dimensions.width)
+        let height = Int(streamFormat.formatDescription.dimensions.height)
+        
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferWidthKey: width,
+            kCVPixelBufferHeightKey: height,
+            kCVPixelBufferIOSurfacePropertiesKey: [:]
+        ]
+        
+        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, attrs as CFDictionary, &defaultPixelBuffer)
+        
+        // Fill with test pattern
+        if let buffer = defaultPixelBuffer {
+            fillWithTestPattern(buffer)
+        }
+    }
+    
+    private func fillWithTestPattern(_ buffer: CVPixelBuffer) {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        
+        // For 420v format, we have two planes: Y (luma) and UV (chroma)
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        
+        // Fill Y plane (plane 0) with gradient
+        if let yPlane = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) {
+            let yBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+            let yData = yPlane.assumingMemoryBound(to: UInt8.self)
+            
+            for y in 0..<height {
+                for x in 0..<width {
+                    // Create a gradient pattern
+                    let offset = y * yBytesPerRow + x
+                    yData[offset] = UInt8((x + y) * 255 / (width + height))
+                }
             }
         }
         
-        // Share the IOSurface IDs via App Groups
-        let surfaceIDs = surfaces.map { IOSurfaceGetID($0) }
-        NSLog("🎯 GigEVirtualCamera: Sharing IOSurface IDs: \(surfaceIDs)")
-        frameCoordinator.shareSurfaceIDs(surfaceIDs)
-        NSLog("✅ GigEVirtualCamera: IOSurface IDs shared via App Groups - Total: \(surfaceIDs.count)")
-        
-        // Verify the write
-        if let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
-            if let savedIDs = defaults.array(forKey: "IOSurfaceIDs") {
-                logger.info("🟢 Verified IOSurface IDs saved to UserDefaults: \(savedIDs)")
-            } else {
-                logger.error("❌ Failed to verify IOSurface IDs in UserDefaults!")
+        // Fill UV plane (plane 1) with color
+        if let uvPlane = CVPixelBufferGetBaseAddressOfPlane(buffer, 1) {
+            let uvBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+            let uvData = uvPlane.assumingMemoryBound(to: UInt8.self)
+            
+            // UV plane is half the resolution of Y plane
+            for y in 0..<(height/2) {
+                for x in 0..<(width/2) {
+                    let offset = y * uvBytesPerRow + x * 2
+                    uvData[offset] = 128      // U (blue-yellow balance)
+                    uvData[offset + 1] = 128  // V (red-green balance)
+                }
             }
         }
     }
     
-    func getNextSurface() -> IOSurface? {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        guard !surfaces.isEmpty else { return nil }
-        
-        let surface = surfaces[currentIndex]
-        currentIndex = (currentIndex + 1) % surfaces.count
-        
-        return surface
+    private func startDefaultFrameTimer() {
+        NSLog("📐📐📐 startDefaultFrameTimer called")
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+            self?.sendDefaultFrame()
+        }
+        NSLog("📐📐📐 Default frame timer scheduled - timer: \(timer != nil)")
     }
     
-    func getSurface(at index: Int) -> IOSurface? {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        guard index >= 0 && index < surfaces.count else { return nil }
-        return surfaces[index]
+    private func stopDefaultFrameTimer() {
+        timer?.invalidate()
+        timer = nil
     }
     
-    func getSurfaceID(at index: Int) -> IOSurfaceID {
-        lock.lock()
-        defer { lock.unlock() }
+    private func sendDefaultFrame() {
+        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else { return }
         
-        guard index < surfaces.count else { return 0 }
-        return IOSurfaceGetID(surfaces[index])
-    }
-    
-    func getSurfaceIDs() -> [IOSurfaceID] {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        return surfaces.map { IOSurfaceGetID($0) }
+        // Always send frames to ensure Photo Booth can connect
+        // Real frames from sink will override these when available
+        if let buffer = defaultPixelBuffer {
+            // Create sample buffer
+            var sampleBuffer: CMSampleBuffer?
+            var timingInfo = CMSampleTimingInfo(
+                duration: frameDuration,
+                presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+                decodeTimeStamp: .invalid
+            )
+            
+            var formatDesc: CMVideoFormatDescription?
+            CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: buffer,
+                formatDescriptionOut: &formatDesc
+            )
+            
+            CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: buffer,
+                formatDescription: formatDesc!,
+                sampleTiming: &timingInfo,
+                sampleBufferOut: &sampleBuffer
+            )
+            
+            if let sample = sampleBuffer {
+                // Log periodically to avoid spam
+                if Int.random(in: 0..<30) == 0 {  // Log ~1 per second at 30fps
+                    NSLog("📐📐📐 Sending default test pattern frame")
+                }
+                sendSampleBuffer(sample)
+            }
+        }
     }
 }
 
 // MARK: - Device Source
 
 class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSource {
+    
     private(set) var device: CMIOExtensionDevice!
     
     private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "Device")
-    private var _streamingCounter = 0
-    private var _sourceStreamSource: GigEVirtualCameraExtensionStreamSource!
-    let framePool: SharedMemoryFramePool  // Shared frame pool
+    
+    // Stream management
+    private var sourceStreamSource: SourceStreamSource!
+    private var sinkStreamSource: SinkStreamSource!
+    
+    // Stream state
+    var streamingCounter = 0  // Number of clients connected to source
+    private(set) var isSinking = false  // Whether sink is active
+    
+    // App coordination
+    private let streamStateCoordinator = StreamStateCoordinator()
     
     init(localizedName: String) {
-        // Initialize frame pool FIRST before super.init()
-        print("🎬 GigEVirtualCameraExtensionDeviceSource: Creating SharedMemoryFramePool...")
-        self.framePool = SharedMemoryFramePool()
-        
         super.init()
         
-        print("🎬 GigEVirtualCameraExtensionDeviceSource: Initializing device...")
+        logger.info("Initializing device: \(localizedName)")
         
         let deviceID = UUID(uuidString: "4B59CDEF-BEA6-52E8-06E7-AD1B8E6B29C4")!
         self.device = CMIOExtensionDevice(localizedName: localizedName, deviceID: deviceID, legacyDeviceID: nil, source: self)
         
-        logger.info("Device initialized: \(localizedName)")
-        print("✅ Device initialized: \(localizedName)")
-        
-        // Create video format that matches what the GigE camera provides
-        var formatDict: [String: Any] = [:]
-        formatDict[kCVPixelBufferPixelFormatTypeKey as String] = kCVPixelFormatType_32BGRA
-        formatDict[kCVPixelBufferWidthKey as String] = 512
-        formatDict[kCVPixelBufferHeightKey as String] = 512
-        formatDict[kCVPixelBufferIOSurfacePropertiesKey as String] = [String: Any]()
+        // Create video format for both streams
+        // Use 420v format which is standard for video
+        let formatDict: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferWidthKey as String: 1280,  // Also use standard HD resolution
+            kCVPixelBufferHeightKey as String: 720,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
         
         var videoDescription: CMFormatDescription?
         CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
-            codecType: kCVPixelFormatType_32BGRA,
-            width: 512,
-            height: 512,
+            codecType: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            width: 1280,
+            height: 720,
             extensions: formatDict as CFDictionary,
             formatDescriptionOut: &videoDescription
         )
@@ -215,19 +623,29 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         
         // Create source stream
         let sourceStreamID = UUID(uuidString: "8B97F5C9-2B8C-5F9D-0F4E-6D3B9C5E0F1F")!
-        _sourceStreamSource = GigEVirtualCameraExtensionStreamSource(
+        sourceStreamSource = SourceStreamSource(
             localizedName: "GigE Camera Output",
             streamID: sourceStreamID,
             streamFormat: videoStreamFormat,
-            device: device,
-            framePool: framePool
+            device: device
         )
         
+        // Create sink stream
+        let sinkStreamID = UUID(uuidString: "7A86E4C8-1C7B-4E8C-9F3D-5B2A8D4C1E2E")!
+        sinkStreamSource = SinkStreamSource(
+            localizedName: "GigE Camera Input",
+            streamID: sinkStreamID,
+            streamFormat: videoStreamFormat,
+            device: device
+        )
+        
+        // Add streams to device
         do {
-            try device.addStream(_sourceStreamSource.stream)
-            logger.info("✅ Added source stream to device")
+            try device.addStream(sourceStreamSource.stream)
+            try device.addStream(sinkStreamSource.stream)
+            logger.info("Successfully added source and sink streams to device")
         } catch {
-            logger.error("Failed to add stream: \(error.localizedDescription)")
+            logger.error("Failed to add streams: \(error.localizedDescription)")
         }
     }
     
@@ -252,283 +670,77 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         // These properties are read-only
     }
     
+    // Called by source stream when client starts watching
     func startStreaming() {
-        _streamingCounter += 1
-        logger.info("Start streaming, counter: \(self._streamingCounter)")
+        streamingCounter += 1
+        NSLog("🎬🎬🎬 DeviceSource.startStreaming() called - counter: \(self.streamingCounter)")
+        logger.info("🎬 Source stream started. Client count: \(self.streamingCounter)")
+        logger.info("Sink active: \(self.isSinking)")
+        
+        // If this is the first client and sink isn't active, signal app
+        if streamingCounter == 1 && !isSinking {
+            logger.info("📢 Signaling app to start sending frames")
+            streamStateCoordinator.signalNeedFrames()
+        } else if streamingCounter == 1 && isSinking {
+            logger.info("✅ Sink already active - frames should be flowing")
+            NSLog("✅✅✅ Sink already active - frames should start flowing to source")
+        }
     }
     
+    // Called by source stream when client stops watching
     func stopStreaming() {
-        if _streamingCounter > 1 {
-            _streamingCounter -= 1
-        } else {
-            _streamingCounter = 0
-            logger.info("Stop streaming")
+        if streamingCounter > 0 {
+            streamingCounter -= 1
         }
-    }
-}
-
-// MARK: - Stream Source
-
-class GigEVirtualCameraExtensionStreamSource: NSObject, CMIOExtensionStreamSource {
-    
-    private(set) var stream: CMIOExtensionStream!
-    let device: CMIOExtensionDevice
-    private let _streamFormat: CMIOExtensionStreamFormat
-    private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera.Extension", category: "StreamSource")
-    
-    // Frame handling
-    private let framePool: SharedMemoryFramePool
-    private var timer: Timer?
-    private let frameDuration = CMTime(value: 1, timescale: 30)  // 30 fps
-    private var frameCount: UInt64 = 0
-    private var lastFrameIndex: Int = -1
-    private let frameCoordinator = FrameCoordinator()
-    
-    init(localizedName: String, streamID: UUID, streamFormat: CMIOExtensionStreamFormat, device: CMIOExtensionDevice, framePool: SharedMemoryFramePool) {
-        self.device = device
-        self._streamFormat = streamFormat
-        self.framePool = framePool
-        super.init()
-        self.stream = CMIOExtensionStream(localizedName: localizedName, streamID: streamID, direction: .source, clockType: .hostTime, source: self)
         
-        // Log the IOSurface IDs for debugging
-        let surfaceIDs = framePool.getSurfaceIDs()
-        logger.info("Stream initialized with IOSurfaces: \(surfaceIDs)")
-    }
-    
-    var formats: [CMIOExtensionStreamFormat] {
-        return [_streamFormat]
-    }
-    
-    var activeFormatIndex: Int = 0
-    
-    var availableProperties: Set<CMIOExtensionProperty> {
-        return [.streamActiveFormatIndex, .streamFrameDuration]
-    }
-    
-    func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
-        let streamProperties = CMIOExtensionStreamProperties(dictionary: [:])
-        if properties.contains(.streamActiveFormatIndex) {
-            streamProperties.activeFormatIndex = activeFormatIndex
-        }
-        if properties.contains(.streamFrameDuration) {
-            streamProperties.frameDuration = frameDuration
-        }
-        return streamProperties
-    }
-    
-    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
-        if let activeFormatIndex = streamProperties.activeFormatIndex {
-            self.activeFormatIndex = activeFormatIndex
+        logger.info("Source stream stopped. Client count: \(self.streamingCounter)")
+        
+        // If no more clients, signal app to stop
+        if streamingCounter == 0 {
+            streamStateCoordinator.signalStreamStopped()
         }
     }
     
-    func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
-        return true
-    }
-    
-    func startStream() throws {
-        NSLog("🎬 GigEVirtualCamera: startStream() called!")
+    // Called by sink stream when app starts sending
+    func startSinkStreaming() {
+        logger.info("🎯 Starting sink streaming - setting up bridge to source")
+        logger.info("Current streaming counter: \(self.streamingCounter)")
+        isSinking = true
         
-        // Write to shared data as a debug marker
-        if let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
-            defaults.set("Stream started at \(Date())", forKey: "Debug_StreamStarted")
-            defaults.synchronize()
-        }
-        
-        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
-            NSLog("❌ GigEVirtualCamera: Failed to get device source")
-            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
-        }
-        deviceSource.startStreaming()
-        
-        NSLog("🟢 GigEVirtualCamera: Stream started - will check for frames at 30fps")
-        NSLog("GigEVirtualCamera: IOSurface IDs: \(self.framePool.getSurfaceIDs())")
-        
-        // Start timer to send frames - ensure it's on the main run loop
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
-            self?.sendNextFrame()
-        }
-        
-        // Ensure timer is added to current run loop
-        if let timer = timer {
-            RunLoop.current.add(timer, forMode: .common)
-            logger.info("Timer scheduled on run loop")
-        }
-        
-        // Send first frame immediately
-        sendNextFrame()
-    }
-    
-    func stopStream() throws {
-        // Write to shared data as a debug marker
-        if let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
-            defaults.set("Stream stopped at \(Date())", forKey: "Debug_StreamStopped")
-            defaults.synchronize()
-        }
-        
-        guard let deviceSource = device.source as? GigEVirtualCameraExtensionDeviceSource else {
-            throw NSError(domain: "GigEVirtualCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid device source"])
-        }
-        deviceSource.stopStreaming()
-        
-        timer?.invalidate()
-        timer = nil
-        
-        NSLog("GigEVirtualCamera: Stream stopped")
-    }
-    
-    private func sendNextFrame() {
-        // Check if there's a new frame from the app
-        let currentFrameIndex = frameCoordinator.readFrameIndex()
-        
-        // Log frame check periodically (every 30 frames = ~1 second)
-        if frameCount % 30 == 0 {
-            NSLog("GigEVirtualCamera: Checking frame: current=\(currentFrameIndex), last=\(self.lastFrameIndex)")
+        // Set up the bridge: route buffers from sink to source
+        sinkStreamSource.consumeSampleBuffer = { [weak self] buffer in
+            guard let self = self else { 
+                self?.logger.error("DeviceSource deallocated - cannot forward frame")
+                return 
+            }
             
-            // Also log the IOSurface IDs we're monitoring
-            if frameCount % 300 == 0 {  // Every 10 seconds
-                let surfaceIDs = framePool.getSurfaceIDs()
-                NSLog("GigEVirtualCamera: Monitoring IOSurface: \(surfaceIDs)")
-            }
-        }
-        
-        // If no frame written yet or same frame, use test pattern
-        if currentFrameIndex <= 0 || currentFrameIndex == lastFrameIndex {
-            // No new frame, send test pattern for now
-            if frameCount % 300 == 0 {
-                NSLog("GigEVirtualCamera: No new frame, sending test pattern")
-            }
-            sendTestPattern()
-            return
-        }
-        
-        // New frame available!
-        NSLog("GigEVirtualCamera: 🎉 New frame available! Frame \(currentFrameIndex)")
-        lastFrameIndex = currentFrameIndex
-        
-        // Simplified: always use the single IOSurface at index 0
-        let surfaceIndex = 0
-        guard let ioSurface = framePool.getSurface(at: surfaceIndex) else {
-            logger.error("No IOSurface available at index \(surfaceIndex)")
-            return
-        }
-        
-        // Create CVPixelBuffer from IOSurface
-        var unmanagedPixelBuffer: Unmanaged<CVPixelBuffer>?
-        let result = CVPixelBufferCreateWithIOSurface(
-            kCFAllocatorDefault,
-            ioSurface,
-            [
-                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey: 512,  // Match actual frame size
-                kCVPixelBufferHeightKey: 512,
-                kCVPixelBufferIOSurfacePropertiesKey: [:]
-            ] as CFDictionary,
-            &unmanagedPixelBuffer
-        )
-        
-        guard result == kCVReturnSuccess, let unmanagedBuffer = unmanagedPixelBuffer else {
-            logger.error("Failed to create pixel buffer from IOSurface: \(result)")
-            return
-        }
-        
-        let pixelBuffer = unmanagedBuffer.takeRetainedValue()
-        NSLog("GigEVirtualCamera: Created pixel buffer from IOSurface, sending...")
-        sendPixelBuffer(pixelBuffer)
-    }
-    
-    private func sendTestPattern() {
-        // Create a simple test pattern when no real frames are available
-        var pixelBuffer: CVPixelBuffer?
-        let attrs: [CFString: Any] = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey: 512,
-            kCVPixelBufferHeightKey: 512,
-            kCVPixelBufferIOSurfacePropertiesKey: [:]
-        ]
-        
-        CVPixelBufferCreate(kCFAllocatorDefault, 512, 512, kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer)
-        
-        guard let buffer = pixelBuffer else { return }
-        
-        // Fill with a simple gradient pattern
-        CVPixelBufferLockBaseAddress(buffer, [])
-        if let baseAddress = CVPixelBufferGetBaseAddress(buffer) {
-            let width = CVPixelBufferGetWidth(buffer)
-            let height = CVPixelBufferGetHeight(buffer)
-            let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-            let pixelData = baseAddress.assumingMemoryBound(to: UInt8.self)
+            self.logger.debug("🔄 DeviceSource received frame from sink")
             
-            for y in 0..<height {
-                for x in 0..<width {
-                    let offset = y * bytesPerRow + x * 4
-                    // Create a gradient pattern
-                    pixelData[offset] = UInt8((x * 255) / width)      // B
-                    pixelData[offset + 1] = UInt8((y * 255) / height) // G
-                    pixelData[offset + 2] = 128                       // R
-                    pixelData[offset + 3] = 255                       // A
-                }
+            // Always forward frames to source stream when sink is active
+            // The source stream will handle client management
+            self.logger.info("📤 Forwarding frame to source (clients: \(self.streamingCounter))")
+            NSLog("🚀🚀🚀 Sending frame to source stream - clients: \(self.streamingCounter)")
+            
+            // Check if sourceStreamSource is nil
+            if self.sourceStreamSource == nil {
+                NSLog("❌❌❌ sourceStreamSource is NIL!")
+                self.logger.error("sourceStreamSource is nil - cannot forward frame")
+                return
             }
+            
+            NSLog("🚀🚀🚀 sourceStreamSource exists, calling sendSampleBuffer...")
+            self.sourceStreamSource.sendSampleBuffer(buffer)
+            NSLog("🚀🚀🚀 sendSampleBuffer call completed")
         }
-        CVPixelBufferUnlockBaseAddress(buffer, [])
         
-        sendPixelBuffer(buffer)
+        logger.info("✅ Sink-to-source bridge configured")
     }
     
-    private func sendPixelBuffer(_ pixelBuffer: CVPixelBuffer) {
-        frameCount += 1
-        
-        // Create timing info
-        let now = CMClockGetTime(CMClockGetHostTimeClock())
-        var timingInfo = CMSampleTimingInfo(
-            duration: frameDuration,
-            presentationTimeStamp: now,
-            decodeTimeStamp: .invalid
-        )
-        
-        // Create format description from the pixel buffer
-        var formatDescription: CMFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
-        )
-        
-        guard let format = formatDescription else {
-            logger.error("Failed to create format description")
-            return
-        }
-        
-        // Create sample buffer
-        var sampleBuffer: CMSampleBuffer?
-        let result = CMSampleBufferCreateReadyWithImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescription: format,
-            sampleTiming: &timingInfo,
-            sampleBufferOut: &sampleBuffer
-        )
-        
-        guard result == kCVReturnSuccess, let sample = sampleBuffer else {
-            logger.error("Failed to create sample buffer: \(result)")
-            return
-        }
-        
-        // Log frame info periodically
-        if frameCount % 30 == 1 {
-            var surfaceID: IOSurfaceID = 0
-            if let ioSurfaceRef = CVPixelBufferGetIOSurface(pixelBuffer) {
-                surfaceID = IOSurfaceGetID(ioSurfaceRef.takeUnretainedValue())
-            }
-            let width = CVPixelBufferGetWidth(pixelBuffer)
-            let height = CVPixelBufferGetHeight(pixelBuffer)
-            logger.info("📤 Frame #\(self.frameCount) | \(width)x\(height) | IOSurface: \(surfaceID)")
-        }
-        
-        // Send to CMIO
-        stream.send(sample, discontinuity: [], hostTimeInNanoseconds: UInt64(now.seconds * Double(NSEC_PER_SEC)))
+    // Called by sink stream when app stops sending
+    func stopSinkStreaming() {
+        logger.info("Stopping sink streaming")
+        isSinking = false
+        sinkStreamSource.consumeSampleBuffer = nil
     }
 }
 
@@ -543,34 +755,25 @@ class GigEVirtualCameraExtensionProviderSource: NSObject, CMIOExtensionProviderS
     override init() {
         super.init()
         
-        NSLog("🟡 GigEVirtualCamera: Provider init starting...")
-        
-        // Debug: Write to UserDefaults to verify provider init
-        if let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
-            defaults.set("Provider init at \(Date())", forKey: "Debug_ProviderInit")
-            defaults.synchronize()
-            NSLog("🟡 GigEVirtualCamera: Written Debug_ProviderInit to UserDefaults")
-        }
+        logger.info("Provider initializing...")
         
         provider = CMIOExtensionProvider(source: self, clientQueue: nil)
-        NSLog("🟡 GigEVirtualCamera: Creating device source...")
         deviceSource = GigEVirtualCameraExtensionDeviceSource(localizedName: "GigE Virtual Camera")
-        NSLog("🟡 GigEVirtualCamera: Device source created")
         
         do {
             try provider.addDevice(deviceSource.device)
-            NSLog("✅ GigEVirtualCamera: Provider initialized with device")
+            logger.info("Provider initialized with device")
         } catch {
-            NSLog("❌ GigEVirtualCamera: Failed to add device: \(error.localizedDescription)")
+            logger.error("Failed to add device to provider: \(error.localizedDescription)")
         }
     }
     
     func connect(to client: CMIOExtensionClient) throws {
-        NSLog("🔗 GigEVirtualCamera: Client connected: PID \(client.pid)")
+        logger.info("Client connected: PID \(client.pid)")
     }
     
     func disconnect(from client: CMIOExtensionClient) {
-        NSLog("🔗 GigEVirtualCamera: Client disconnected: PID \(client.pid)")
+        logger.info("Client disconnected: PID \(client.pid)")
     }
     
     var availableProperties: Set<CMIOExtensionProperty> {

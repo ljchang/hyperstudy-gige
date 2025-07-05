@@ -119,7 +119,8 @@ fi
 
 # Step 3: Notarize the app
 print_status "Step 3: Notarizing the app..."
-"$SCRIPT_DIR/notarize.sh" "$APP_PATH"
+# Use echo "n" to skip DMG creation prompt in notarize.sh
+echo "n" | "$SCRIPT_DIR/notarize.sh" "$APP_PATH"
 
 # Verify notarization
 if xcrun stapler validate "$APP_PATH" 2>&1 | grep -q "The validate action worked"; then

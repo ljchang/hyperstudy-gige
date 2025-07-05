@@ -135,6 +135,9 @@ print_status "Step 4: Creating distribution DMG..."
 # Create directories
 mkdir -p "$OUTPUT_DIR"
 
+# Remove any existing DMG first
+rm -f "$OUTPUT_DIR/GigEVirtualCamera.dmg"
+
 # Use the create_dmg script
 "$SCRIPT_DIR/create_dmg.sh" "$APP_PATH"
 

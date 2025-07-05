@@ -287,9 +287,37 @@ git commit -m "Release version $VERSION" || true
 git tag -a "v$VERSION" -m "Release version $VERSION"
 print_success "Version changes committed and tagged"
 
-# Step 8: Create GitHub release (unless skipped)
+# Step 8: Notarize the DMG
+print_status "Step 8: Notarizing the DMG..."
+
+# Submit DMG for notarization
+if xcrun notarytool submit "$DMG_FILE" \
+    --keychain-profile "GigE-Notarization" \
+    --wait; then
+    print_success "DMG notarization submitted successfully"
+    
+    # Staple the ticket
+    if xcrun stapler staple "$DMG_FILE"; then
+        print_success "Notarization ticket stapled to DMG"
+    else
+        print_error "Failed to staple notarization ticket to DMG"
+        exit 1
+    fi
+else
+    print_error "DMG notarization failed"
+    exit 1
+fi
+
+# Verify DMG
+if spctl -a -vvv "$DMG_FILE" 2>&1 | grep -q "source=Notarized Developer ID"; then
+    print_success "DMG verification passed"
+else
+    print_warning "DMG verification shows unexpected status"
+fi
+
+# Step 9: Create GitHub release (unless skipped)
 if [ "$NO_GITHUB" = false ]; then
-    print_status "Step 8: Creating GitHub release..."
+    print_status "Step 9: Creating GitHub release..."
     
     # Check if gh CLI is installed
     if ! command -v gh &> /dev/null; then
@@ -323,8 +351,8 @@ else
     print_info "Step 8: Skipping GitHub release (--no-github specified)"
 fi
 
-# Step 9: Final summary
-print_status "Step 9: Distribution summary..."
+# Step 10: Final summary
+print_status "Step 10: Distribution summary..."
 
 DMG_SIZE=$(du -h "$DMG_FILE" | cut -f1)
 

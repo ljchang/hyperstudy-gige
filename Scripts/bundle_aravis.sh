@@ -37,6 +37,12 @@ copy_library_and_deps() {
     echo "Copying $lib_name..."
     cp "$lib_path" "$dest_dir/"
     
+    # Sign the library if in Release mode
+    if [ "${CONFIGURATION}" = "Release" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY}" ]; then
+        echo "  Signing $lib_name with Developer ID..."
+        codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp --options runtime "$dest_dir/$lib_name"
+    fi
+    
     # Get dependencies
     local deps=$(otool -L "$lib_path" | grep -E "(opt/homebrew|usr/local)" | awk '{print $1}')
     

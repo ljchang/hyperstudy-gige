@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "GigE Camera Enabler",
+  "version": "1.0",
+  "description": "Enables GigE Virtual Camera in Chrome",
+  "permissions": [
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

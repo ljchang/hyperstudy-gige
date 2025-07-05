@@ -89,12 +89,8 @@ targets:
             "${SRCROOT}/Scripts/bundle_aravis.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
             "${SRCROOT}/Scripts/fix_rpaths.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
             
-            # Sign all bundled libraries
-            echo "Signing bundled libraries..."
-            find "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
-              echo "Signing: $(basename "$lib")"
-              codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp=none "$lib" || true
-            done
+            # Libraries will be signed by Xcode as part of the app bundle
+            echo "Libraries bundled successfully"
           fi
         name: Bundle Aravis Libraries
         basedOnDependencyAnalysis: false
@@ -113,43 +109,8 @@ targets:
               mv "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" \
                  "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
               
-              # Sign all libraries first
-              echo "Signing libraries..."
-              find "/Applications/${PRODUCT_NAME}.app/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
-                codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp=none "$lib" || true
-              done
-              
-              # Remove provisioning profile from extension (system extensions don't use them)
-              echo "Removing extension provisioning profile..."
-              rm -f "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/embedded.provisionprofile"
-              
-              # Re-sign extension with expanded entitlements
-              echo "Signing extension..."
-              TEMP_EXT_ENTITLEMENTS="/tmp/expanded-ext-entitlements.plist"
-              cp "${SRCROOT}/GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements" "${TEMP_EXT_ENTITLEMENTS}"
-              codesign --force --deep --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
-                --entitlements "${TEMP_EXT_ENTITLEMENTS}" \
-                --timestamp=none \
-                "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
-              rm -f "${TEMP_EXT_ENTITLEMENTS}"
-              
-              # Re-sign the entire app with expanded entitlements
-              echo "Re-signing entire app..."
-              TEMP_APP_ENTITLEMENTS="/tmp/expanded-app-entitlements.plist"
-              if [ "${CONFIGURATION}" = "Debug" ]; then
-                cp "${SRCROOT}/GigECameraApp/GigECamera-Debug.entitlements" "${TEMP_APP_ENTITLEMENTS}"
-              else
-                cp "${SRCROOT}/GigECameraApp/GigECamera-Release.entitlements" "${TEMP_APP_ENTITLEMENTS}"
-              fi
-              
-              codesign --force --deep --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
-                --entitlements "${TEMP_APP_ENTITLEMENTS}" \
-                --options runtime \
-                --timestamp=none \
-                "/Applications/${PRODUCT_NAME}.app"
-              rm -f "${TEMP_APP_ENTITLEMENTS}"
-              
-              echo "App re-signed successfully"
+              # Just copy without re-signing - let Xcode handle the signing
+              echo "App copied successfully"
             fi
             
             # Remove provisioning profile for Release builds (Developer ID doesn't use them)
@@ -160,6 +121,68 @@ targets:
             fi
           fi
         name: Copy to Applications
+        basedOnDependencyAnalysis: false
+      - script: |
+          # Only run distribution steps if this is a Distribution build
+          # Check if we're in the Distribution scheme by looking for a marker file
+          if [ "${CONFIGURATION}" = "Release" ] && [ -f "${SRCROOT}/.distribution_build" ]; then
+            echo "🚀 Starting distribution process..."
+            
+            # Ensure scripts are executable
+            chmod +x "${SRCROOT}/Scripts/notarize.sh"
+            chmod +x "${SRCROOT}/Scripts/create_dmg.sh"
+            
+            # Wait a moment for the app to be fully written
+            sleep 2
+            
+            # Step 1: Notarize the app
+            echo "📝 Notarizing app..."
+            if "${SRCROOT}/Scripts/notarize.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"; then
+              echo "✅ App notarized successfully"
+            else
+              echo "❌ Notarization failed"
+              exit 1
+            fi
+            
+            # Step 2: Create DMG
+            echo "💿 Creating DMG..."
+            if "${SRCROOT}/Scripts/create_dmg.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"; then
+              echo "✅ DMG created successfully"
+              
+              # Step 3: Notarize the DMG
+              echo "📝 Notarizing DMG..."
+              DMG_PATH="${SRCROOT}/build/distribution/GigEVirtualCamera.dmg"
+              
+              if xcrun notarytool submit "$DMG_PATH" --keychain-profile "GigE-Notarization" --wait; then
+                echo "✅ DMG notarized successfully"
+                
+                # Staple the notarization ticket
+                if xcrun stapler staple "$DMG_PATH"; then
+                  echo "✅ Notarization ticket stapled to DMG"
+                  echo "🎉 Distribution build complete!"
+                  echo "📦 DMG location: $DMG_PATH"
+                  
+                  # Open the distribution folder
+                  open "${SRCROOT}/build/distribution"
+                else
+                  echo "❌ Failed to staple notarization ticket"
+                  exit 1
+                fi
+              else
+                echo "❌ DMG notarization failed"
+                exit 1
+              fi
+            else
+              echo "❌ DMG creation failed"
+              exit 1
+            fi
+            
+            # Clean up marker file
+            rm -f "${SRCROOT}/.distribution_build"
+          else
+            echo "ℹ️  Skipping distribution steps (not a distribution build)"
+          fi
+        name: Distribution Steps
         basedOnDependencyAnalysis: false
           
   GigECameraExtension:
@@ -233,3 +256,30 @@ schemes:
       config: Debug
     archive:
       config: Release
+  
+  GigEVirtualCamera-Distribution:
+    build:
+      targets:
+        GigEVirtualCamera: all
+        GigECameraExtension: all
+      preActions:
+        - script: |
+            # Create marker file to trigger distribution steps
+            touch "${SRCROOT}/.distribution_build"
+          settingsTarget: GigEVirtualCamera
+    run:
+      config: Release
+      executable: GigEVirtualCamera
+    test:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    archive:
+      config: Release
+      customArchiveName: GigEVirtualCamera-Distribution
+      postActions:
+        - script: |
+            echo "Distribution archive created"
+          settingsTarget: GigEVirtualCamera

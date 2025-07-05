@@ -12,6 +12,57 @@ struct ContentView: View {
     @EnvironmentObject var cameraManager: CameraManager
     @State private var previewImage: NSImage?
     @StateObject private var extensionManager = ExtensionManager.shared
+    @State private var isDiscoveringCameras = false
+    
+    var selectedCameraText: String {
+        if let selectedId = cameraManager.selectedCameraId,
+           let camera = cameraManager.availableCameras.first(where: { $0.deviceId == selectedId }) {
+            return "\(camera.name) (\(camera.ipAddress))"
+        }
+        return "Select Camera"
+    }
+    
+    var connectionStateText: String {
+        switch cameraManager.connectionState {
+        case "Connecting":
+            let attempts = cameraManager.connectionAttempts
+            if attempts > 1 {
+                return "Connecting... (attempt \(attempts))"
+            } else {
+                return "Connecting..."
+            }
+        case "Connected":
+            return "Connected"
+        case "Failed":
+            return "Connection failed"
+        default:
+            return "No Camera"
+        }
+    }
+    
+    var connectionStateIcon: String {
+        switch cameraManager.connectionState {
+        case "Connected":
+            return "circle.fill"
+        case "Failed":
+            return "exclamationmark.circle.fill"
+        default:
+            return "circle"
+        }
+    }
+    
+    var connectionStateColor: Color {
+        switch cameraManager.connectionState {
+        case "Connecting":
+            return DesignSystem.Colors.statusOrange
+        case "Connected":
+            return DesignSystem.Colors.statusGreen
+        case "Failed":
+            return .red
+        default:
+            return DesignSystem.Colors.textSecondary
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -104,6 +155,7 @@ struct ContentView: View {
                 
                 Divider()
                     .padding(.horizontal, DesignSystem.Spacing.large)
+                    .padding(.vertical, DesignSystem.Spacing.small)
                 
                 // Camera selection section
                 if !cameraManager.availableCameras.isEmpty {
@@ -118,15 +170,80 @@ struct ContentView: View {
                             Spacer()
                         }
                         
-                        Picker("", selection: $cameraManager.selectedCameraId) {
-                            Text("None").tag(nil as String?)
-                            ForEach(cameraManager.availableCameras, id: \.deviceId) { camera in
-                                Text("\(camera.name) (\(camera.ipAddress))")
-                                    .tag(camera.deviceId as String?)
+                        Menu {
+                            Button("None") {
+                                cameraManager.selectedCameraId = nil
+                            }
+                            
+                            Divider()
+                            
+                            if isDiscoveringCameras {
+                                HStack {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .scaleEffect(0.8)
+                                    Text("Searching for cameras...")
+                                        .foregroundColor(.gray)
+                                }
+                            } else if cameraManager.availableCameras.isEmpty {
+                                Text("No cameras found")
+                                    .foregroundColor(.gray)
+                            } else {
+                                ForEach(cameraManager.availableCameras, id: \.deviceId) { camera in
+                                    Button("\(camera.name) (\(camera.ipAddress))") {
+                                        cameraManager.selectedCameraId = camera.deviceId
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button("Refresh Camera List") {
+                                isDiscoveringCameras = true
+                                cameraManager.refreshCameraList()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                    isDiscoveringCameras = false
+                                }
+                            }
+                            .foregroundColor(.blue)
+                            .disabled(isDiscoveringCameras)
+                        } label: {
+                            HStack {
+                                if isDiscoveringCameras {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .scaleEffect(0.7)
+                                        .frame(width: 14, height: 14)
+                                    Text("Searching...")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                } else {
+                                    Text(selectedCameraText)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                Image(systemName: isDiscoveringCameras ? "arrow.triangle.2.circlepath" : "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .rotationEffect(.degrees(isDiscoveringCameras ? 360 : 0))
+                                    .animation(isDiscoveringCameras ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isDiscoveringCameras)
+                            }
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.gray.opacity(0.05))
+                                    )
+                            )
+                        }
+                        .onTapGesture {
+                            // Refresh camera list when menu is about to open
+                            isDiscoveringCameras = true
+                            cameraManager.refreshCameraList()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                isDiscoveringCameras = false
                             }
                         }
-                        .pickerStyle(MenuPickerStyle())
-                        .labelsHidden()
                     }
                     .padding(.horizontal, DesignSystem.Spacing.large)
                 }
@@ -134,25 +251,103 @@ struct ContentView: View {
                 
                 // Status section
                 VStack(spacing: DesignSystem.Spacing.medium) {
-                    StatusRow(
-                        icon: "circle.fill",
-                        title: "Status",
-                        value: cameraManager.statusText,
-                        valueColor: cameraManager.statusColor
-                    )
+                    // Show connection state with appropriate icon and animation
+                    HStack {
+                        HStack(spacing: DesignSystem.Spacing.small) {
+                            if cameraManager.connectionState == "Connecting" {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: connectionStateIcon)
+                                    .foregroundColor(connectionStateColor)
+                            }
+                            
+                            Text("Status")
+                                .font(DesignSystem.Typography.callout)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Text(connectionStateText)
+                            .font(DesignSystem.Typography.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(connectionStateColor)
+                    }
                     
+                    // Add sink connection status
                     if cameraManager.isConnected {
+                        HStack {
+                            StatusRow(
+                                icon: "arrow.triangle.2.circlepath",
+                                title: "CMIO Sink",
+                                value: cameraManager.isFrameSenderConnected ? "Connected" : "Waiting...",
+                                valueColor: cameraManager.isFrameSenderConnected ? .green : .orange
+                            )
+                            
+                            // Add retry button if sink is not connected
+                            if !cameraManager.isFrameSenderConnected {
+                                Button(action: {
+                                    cameraManager.retryFrameSenderConnection()
+                                }) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.orange)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .help("Retry sink connection")
+                            }
+                        }
+                    }
+                    
+                    // Show camera info during connection attempts too
+                    if cameraManager.connectionState == "Connecting" || cameraManager.isConnected {
                         StatusRow(
                             icon: "camera.fill",
                             title: "Camera",
                             value: cameraManager.cameraModel
                         )
+                    }
+                    
+                    // Show retry button if connection failed
+                    if cameraManager.connectionState == "Failed" {
+                        Button(action: {
+                            cameraManager.retryConnection()
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Retry Connection")
+                            }
+                            .font(DesignSystem.Typography.callout)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, DesignSystem.Spacing.medium)
+                            .padding(.vertical, DesignSystem.Spacing.small)
+                            .background(DesignSystem.Colors.statusOrange)
+                            .cornerRadius(DesignSystem.CornerRadius.medium)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.top, DesignSystem.Spacing.small)
+                    }
+                    
+                    if cameraManager.isConnected {
                         
-                        StatusRow(
-                            icon: "video.fill",
-                            title: "Format",
-                            value: cameraManager.currentFormat
-                        )
+                        // Format selector
+                        HStack {
+                            Label("Format", systemImage: "video.fill")
+                                .font(DesignSystem.Typography.callout)
+                                .foregroundColor(DesignSystem.Colors.textSecondary)
+                            
+                            Spacer()
+                            
+                            Picker("", selection: $cameraManager.selectedFormatIndex) {
+                                ForEach(0..<cameraManager.availableFormats.count, id: \.self) { index in
+                                    Text(cameraManager.availableFormats[index]).tag(index)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 150)
+                        }
                         
                         // Pixel format selector
                         HStack {
@@ -171,6 +366,105 @@ struct ContentView: View {
                             .frame(width: 120)
                         }
                         
+                        Divider()
+                            .padding(.vertical, DesignSystem.Spacing.xSmall)
+                        
+                        // Camera Controls Section
+                        VStack(spacing: DesignSystem.Spacing.medium) {
+                            // Exposure Time Control
+                            if cameraManager.exposureTimeAvailable {
+                                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
+                                    HStack {
+                                        Label("Exposure", systemImage: "timer")
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textSecondary)
+                                        Spacer()
+                                        Text("\(Int(cameraManager.exposureTime)) µs")
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textPrimary)
+                                            .monospacedDigit()
+                                    }
+                                    
+                                    Slider(value: $cameraManager.exposureTime, 
+                                           in: cameraManager.exposureTimeMin...cameraManager.exposureTimeMax,
+                                           onEditingChanged: { editing in
+                                               if !editing {
+                                                   // Log final value when user releases slider
+                                                   print("Exposure set to: \(cameraManager.exposureTime)")
+                                               }
+                                           })
+                                        .controlSize(.small)
+                                        .disabled(!cameraManager.exposureTimeAvailable)
+                                }
+                            
+                            }
+                            
+                            // Gain Control
+                            if cameraManager.gainAvailable {
+                                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
+                                    HStack {
+                                        Label("Gain", systemImage: "dial.high")
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textSecondary)
+                                        Spacer()
+                                        Text(String(format: "%.1fx", cameraManager.gain))
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textPrimary)
+                                            .monospacedDigit()
+                                    }
+                                    
+                                    Slider(value: $cameraManager.gain,
+                                           in: cameraManager.gainMin...cameraManager.gainMax,
+                                           onEditingChanged: { editing in
+                                               if !editing {
+                                                   print("Gain set to: \(cameraManager.gain)")
+                                               }
+                                           })
+                                        .controlSize(.small)
+                                        .disabled(!cameraManager.gainAvailable)
+                                }
+                            }
+                            
+                            // Frame Rate Control
+                            if cameraManager.frameRateAvailable && cameraManager.selectedFormatIndex != 0 {
+                                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
+                                    HStack {
+                                        Label("Frame Rate", systemImage: "speedometer")
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textSecondary)
+                                        Spacer()
+                                        Text("\(Int(cameraManager.frameRate)) fps")
+                                            .font(DesignSystem.Typography.callout)
+                                            .foregroundColor(DesignSystem.Colors.textPrimary)
+                                            .monospacedDigit()
+                                    }
+                                    
+                                    Slider(value: $cameraManager.frameRate,
+                                           in: cameraManager.frameRateMin...cameraManager.frameRateMax,
+                                           step: 1,
+                                           onEditingChanged: { editing in
+                                               if !editing {
+                                                   print("Frame rate set to: \(cameraManager.frameRate)")
+                                               }
+                                           })
+                                        .controlSize(.small)
+                                        .disabled(!cameraManager.frameRateAvailable)
+                                }
+                            }
+                            
+                            // Show message if no controls are available
+                            if !cameraManager.exposureTimeAvailable && !cameraManager.gainAvailable && !cameraManager.frameRateAvailable {
+                                HStack {
+                                    Image(systemName: "info.circle")
+                                        .foregroundColor(.orange)
+                                    Text("Camera controls not available for this device")
+                                        .font(DesignSystem.Typography.caption)
+                                        .foregroundColor(.orange)
+                                }
+                                .padding(DesignSystem.Spacing.small)
+                            }
+                        }
+                        
                         // Preview toggle button
                         Button(action: {
                             cameraManager.togglePreview()
@@ -182,7 +476,7 @@ struct ContentView: View {
                                         context.duration = 0.3
                                         context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                                         
-                                        let targetHeight: CGFloat = cameraManager.isShowingPreview ? 800 : 500
+                                        let targetHeight: CGFloat = cameraManager.isShowingPreview ? 900 : 680
                                         var frame = window.frame
                                         let heightDiff = targetHeight - frame.height
                                         frame.size.height = targetHeight
@@ -223,12 +517,16 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, DesignSystem.Spacing.large)
                 
-                Spacer(minLength: DesignSystem.Spacing.small)
+                Spacer(minLength: DesignSystem.Spacing.medium)
             }
-            .padding(.bottom, DesignSystem.Spacing.small)
+            .padding(.bottom, DesignSystem.Spacing.medium)
         }
-        .frame(minHeight: cameraManager.isShowingPreview ? 800 : 500)
+        .frame(minHeight: cameraManager.isShowingPreview ? 900 : 680)
         .animation(.easeInOut(duration: 0.3), value: cameraManager.isShowingPreview)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GigECamerasDiscovered"))) { _ in
+            // Clear loading state when discovery completes
+            isDiscoveringCameras = false
+        }
     }
     
 }

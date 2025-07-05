@@ -1,91 +1,46 @@
-# GigE Virtual Camera - Current Project Status
+# Current Status - GigE Virtual Camera Frame Flow
 
-## Overview
-The GigE Virtual Camera project is now architecturally complete with a clean, simplified design that eliminates unnecessary complexity.
+## What's Working ✅
+1. **App → Sink Connection**: The app is now successfully connecting to the sink stream via CMIOSinkConnector
+2. **Sink Stream Consumption**: The extension's sink stream is properly consuming frames from the queue
+3. **DeviceSource Bridge**: Frames are being forwarded from sink to source via the DeviceSource bridge
+4. **Source Stream Send**: The source stream's sendSampleBuffer method is being called and executing properly
+5. **CMIO Frame Delivery**: Frames are being sent to CMIO via stream.send()
 
-## Completed Work ✅
+## What's Not Working ❌
+1. **Photo Booth Connection**: Photo Booth is not connecting to the source stream (streamingCounter = 0)
+2. **Frame Sequence Numbers**: All frames have sequence number 0, which may indicate an issue
+3. **No authorizedToStartStream**: Photo Booth isn't even calling authorizedToStartStream on the source
 
-### 1. Architecture Simplification
-- Removed complex XPC/IPC communication
-- Extension directly uses shared GigECameraManager instance
-- Eliminated need for CameraFrameSender class
-- Both app and extension access same camera manager
-
-### 2. Entitlements Configuration
-- **App**: Sandbox, Network Client, App Groups
-- **Extension**: Sandbox, App Groups only
-- Removed unnecessary camera and file access entitlements
-- Properly configured for both targets
-
-### 3. Core Functionality
-- Aravis integration complete with full pixel format support
-- Frame capture and distribution working
-- Camera discovery and connection management
-- Preview functionality in main app
-- Virtual camera registration with CMIOExtension
-
-### 4. Documentation Cleanup
-- Removed outdated system extension documentation
-- Updated architecture documentation to reflect current design
-- Created debugging guide with current information
-- Cleaned up provisioning instructions
-
-## Remaining Tasks 📋
-
-### High Priority
-1. **Code Signing & Provisioning**
-   - Create App IDs in Apple Developer Portal
-   - Generate provisioning profiles (development and distribution)
-   - Configure Developer ID certificate for distribution
-
-2. **Testing with Real Hardware**
-   - Verify with actual GigE camera
-   - Test different pixel formats
-   - Validate frame rates and performance
-
-### Medium Priority
-3. **Error Handling**
-   - Add user-friendly error messages
-   - Handle camera disconnection gracefully
-   - Improve network error feedback
-
-4. **Distribution Preparation**
-   - Set up notarization workflow
-   - Create installer/DMG
-   - Write end-user documentation
-
-### Low Priority
-5. **Enhanced Features**
-   - Camera controls UI (exposure, gain)
-   - Frame rate selection
-   - Advanced settings panel
-
-## Technical Details
-
-### Current Architecture
+## Complete Frame Flow
 ```
-App + Extension
-       ↓
-GigECameraManager (shared)
-       ↓
-AravisBridge (Obj-C++)
-       ↓
-Aravis Library (C)
-       ↓
-GigE Camera (Network)
+App (GigEVirtualCamera.app)
+    ↓ [✅ Working]
+CMIOSinkConnector 
+    ↓ [✅ Working - via CMSimpleQueue]
+Sink Stream (Extension)
+    ↓ [✅ Working - consumeSampleBuffer]
+DeviceSource Bridge
+    ↓ [✅ Working - removed streamingCounter check]
+Source Stream
+    ↓ [✅ Working - stream.send() called]
+CMIO Framework
+    ↓ [❌ Not connecting]
+Photo Booth
 ```
 
-### Key Benefits
-- **Simple**: No complex IPC mechanisms
-- **Efficient**: Direct frame access, minimal overhead
-- **Maintainable**: Clear separation of concerns
-- **Reliable**: Fewer moving parts = fewer failure points
+## Key Discovery
+We removed the `streamingCounter > 0` check which was blocking frames. Now frames ARE flowing all the way to CMIO, but Photo Booth still won't connect.
 
-## Next Immediate Steps
+## Possible Root Causes
+1. **Stream Format Issue**: The stream format might not be compatible with what Photo Booth expects
+2. **Timing Issue**: Photo Booth might need to see frames immediately when it queries the camera
+3. **Stream Properties**: Missing or incorrect stream properties that Photo Booth requires
+4. **Default Frames**: The default frame timer might need adjustment
+5. **Authorization Flow**: There might be an issue with how the source stream handles client authorization
 
-1. **Complete provisioning setup** (see NEXT_STEPS.md)
-2. **Build and test** with proper signing
-3. **Install to /Applications** and verify virtual camera appears
-4. **Test with real GigE camera**
-
-The project is ready for final testing and distribution preparation.
+## Next Steps
+1. Investigate why Photo Booth isn't calling authorizedToStartStream
+2. Check if default frames are being sent when no sink is active
+3. Verify stream properties and format are correct
+4. Consider implementing Option 3 from FIX_PLAN.md - start forwarding on authorization

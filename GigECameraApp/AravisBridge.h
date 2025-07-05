@@ -50,9 +50,11 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 @property (nonatomic, weak) id<AravisBridgeDelegate> delegate;
 @property (nonatomic, readonly) AravisCameraState state;
 @property (nonatomic, readonly, nullable) AravisCamera *currentCamera;
+@property (atomic, assign) BOOL shouldStopStreaming;
 
 // Discovery
 + (NSArray<AravisCamera *> *)discoverCameras;
++ (NSArray<AravisCamera *> *)discoverCamerasWithTimeout:(int)timeoutMs;
 
 // Fake camera management
 + (BOOL)startFakeCamera;
@@ -73,11 +75,16 @@ typedef NS_ENUM(NSInteger, AravisCameraState) {
 - (BOOL)setExposureTime:(double)exposureTimeUs;
 - (BOOL)setGain:(double)gain;
 - (void)setPreferredPixelFormat:(NSString *)format;
+- (BOOL)setResolution:(CGSize)resolution;
 
 // Get current settings
 - (double)frameRate;
 - (double)exposureTime;
 - (double)gain;
+- (CGSize)currentResolution;
+
+// Get camera capabilities
+- (NSDictionary *)getCameraCapabilities;
 
 @end
 

@@ -43,6 +43,7 @@ extern "C" {
     dispatch_queue_t _frameQueue;
     dispatch_source_t _frameTimer;
     NSString *_preferredPixelFormat;
+    CGSize _currentResolution;
 }
 @end
 
@@ -91,6 +92,7 @@ static CVPixelBufferRef CreateIOSurfaceBackedPixelBuffer(size_t width, size_t he
         _state = AravisCameraStateDisconnected;
         _frameQueue = dispatch_queue_create("com.lukechang.gigecamera.framequeue", DISPATCH_QUEUE_SERIAL);
         _preferredPixelFormat = @"Auto";
+        _currentResolution = CGSizeZero;
     }
     return self;
 }
@@ -107,7 +109,20 @@ static CVPixelBufferRef CreateIOSurfaceBackedPixelBuffer(size_t width, size_t he
 #pragma mark - Discovery
 
 + (NSArray<AravisCamera *> *)discoverCameras {
-    NSLog(@"AravisBridge: Starting camera discovery...");
+    return [self discoverCamerasWithTimeout:2000];
+}
+
++ (NSArray<AravisCamera *> *)discoverCamerasWithTimeout:(int)timeoutMs {
+    NSLog(@"AravisBridge: Starting camera discovery with timeout %dms...", timeoutMs);
+    
+    // Set environment variables for discovery
+    char timeoutStr[32];
+    snprintf(timeoutStr, sizeof(timeoutStr), "%d", timeoutMs);
+    setenv("ARV_GV_DISCOVERY_TIMEOUT", timeoutStr, 1);
+    
+    // Allow broadcast acknowledgments
+    setenv("ARV_GV_INTERFACE_FLAGS", "1", 1);
+    
     arv_update_device_list();
     
     NSMutableArray<AravisCamera *> *cameras = [NSMutableArray array];
@@ -202,14 +217,25 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
         
         [self setState:AravisCameraStateConnecting];
         
+        NSLog(@"AravisBridge: Attempting to connect to camera at %@", ipAddress);
+        
+        // Set a timeout for camera connection
+        // This prevents the UI from freezing on unresponsive cameras
+        setenv("ARV_GV_STREAM_TIMEOUT", "3000", 1);  // 3 second timeout
+        setenv("ARV_GV_PACKET_TIMEOUT", "40", 1);    // 40ms packet timeout
+        
         GError *error = NULL;
         _camera = arv_camera_new([ipAddress UTF8String], &error);
         
         if (!_camera) {
+            NSLog(@"AravisBridge: Failed to connect to camera at %@", ipAddress);
             [self handleError:error message:@"Failed to connect to camera"];
             if (error) g_error_free(error);
+            [self setState:AravisCameraStateDisconnected];
             return NO;
         }
+        
+        NSLog(@"AravisBridge: Successfully created camera object for %@", ipAddress);
         
         // Get camera info
         const char *vendor = arv_camera_get_vendor_name(_camera, NULL);
@@ -222,13 +248,24 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
                                                       ipAddress:ipAddress];
         
         // Configure GigE-specific settings for better streaming
-        NSLog(@"AravisBridge: Configuring GigE settings");
+        NSLog(@"AravisBridge: Configuring GigE settings for %@ %@", 
+              [NSString stringWithUTF8String:vendor ?: "Unknown"], 
+              [NSString stringWithUTF8String:model ?: "Camera"]);
         
         // Set packet size (MTU)
-        // Try to use jumbo frames if supported, otherwise fall back to standard
-        arv_camera_gv_set_packet_size(_camera, 8228, &error);
+        // Try standard MTU first for compatibility
+        guint packet_size = arv_camera_gv_get_packet_size(_camera, &error);
+        NSLog(@"AravisBridge: Current packet size: %u", packet_size);
+        
         if (error) {
-            NSLog(@"AravisBridge: Failed to set jumbo frames, using standard MTU: %s", error->message);
+            g_error_free(error);
+            error = NULL;
+        }
+        
+        // Use standard 1500 MTU for better compatibility
+        arv_camera_gv_set_packet_size(_camera, 1500, &error);
+        if (error) {
+            NSLog(@"AravisBridge: Warning - could not set packet size: %s", error->message);
             g_error_free(error);
             error = NULL;
             arv_camera_gv_set_packet_size(_camera, 1400, &error); // Slightly less than 1500 to account for headers
@@ -263,10 +300,20 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
 }
 
 - (void)disconnect {
+    NSLog(@"AravisBridge: disconnect called");
+    
+    // Stop streaming first (this sets shouldStopStreaming flag)
+    [self stopStreaming];
+    
+    // Give frame processing time to exit cleanly
+    dispatch_barrier_sync(_frameQueue, ^{
+        // This block runs after all previously queued blocks have finished
+        NSLog(@"AravisBridge: Frame queue drained");
+    });
+    
     @synchronized(self) {
-        [self stopStreaming];
-        
         if (_camera) {
+            NSLog(@"AravisBridge: Releasing camera...");
             g_object_unref(_camera);
             _camera = NULL;
         }
@@ -284,6 +331,9 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
         NSLog(@"AravisBridge: Cannot start streaming - camera=%p, state=%ld", _camera, (long)_state);
         return NO;
     }
+    
+    // Reset stop flag
+    self.shouldStopStreaming = NO;
     
     GError *error = NULL;
     
@@ -346,7 +396,10 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
     for (int i = 0; i < 10; i++) {
         ArvBuffer *buffer = arv_buffer_new(payload, NULL);
         if (buffer) {
-            arv_stream_push_buffer(_stream, buffer);
+            // Only push buffer if stream is still valid
+            if (_stream && !self.shouldStopStreaming) {
+                arv_stream_push_buffer(_stream, buffer);
+            }
         } else {
             NSLog(@"AravisBridge: Failed to allocate buffer %d", i);
         }
@@ -375,18 +428,32 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
 }
 
 - (void)stopStreaming {
+    NSLog(@"AravisBridge: stopStreaming called");
+    
+    // Signal frame processing to stop
+    self.shouldStopStreaming = YES;
+    
+    // Stop camera acquisition first
     if (_state == AravisCameraStateStreaming && _camera) {
+        NSLog(@"AravisBridge: Stopping camera acquisition...");
         arv_camera_stop_acquisition(_camera, NULL);
     }
     
-    if (_stream) {
-        g_object_unref(_stream);
-        _stream = NULL;
-    }
-    
-    if (_state == AravisCameraStateStreaming) {
-        [self setState:AravisCameraStateConnected];
-    }
+    // Wait a bit for frame processing to finish
+    dispatch_async(_frameQueue, ^{
+        // This ensures processFrames has exited before we free the stream
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self->_stream) {
+                NSLog(@"AravisBridge: Releasing stream...");
+                g_object_unref(self->_stream);
+                self->_stream = NULL;
+            }
+            
+            if (self->_state == AravisCameraStateStreaming) {
+                [self setState:AravisCameraStateConnected];
+            }
+        });
+    });
 }
 
 #pragma mark - Frame Processing
@@ -412,7 +479,13 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
               n_completed_buffers, n_failures, n_underruns);
     }
     
-    while (_state == AravisCameraStateStreaming && _stream) {
+    while (_state == AravisCameraStateStreaming && _stream && !self.shouldStopStreaming) {
+        // Check if we should stop before attempting to get buffer
+        if (self.shouldStopStreaming || !_stream) {
+            NSLog(@"AravisBridge: Stop requested or stream is null, exiting processFrames");
+            break;
+        }
+        
         ArvBuffer *buffer = arv_stream_timeout_pop_buffer(_stream, 1000000); // 1 second timeout
         
         if (buffer) {
@@ -453,7 +526,10 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
                         break;
                 }
             }
-            arv_stream_push_buffer(_stream, buffer);
+            // Only push buffer if stream is still valid
+            if (_stream && !self.shouldStopStreaming) {
+                arv_stream_push_buffer(_stream, buffer);
+            }
         } else {
             timeoutCount++;
             NSLog(@"AravisBridge: Timeout waiting for frame (timeout #%d)", timeoutCount);
@@ -498,6 +574,9 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
     const void *data = arv_buffer_get_data(buffer, NULL);
     arv_buffer_get_image_region(buffer, NULL, NULL, &width, &height);
     ArvPixelFormat pixel_format = arv_buffer_get_image_pixel_format(buffer);
+    
+    // Update current resolution
+    _currentResolution = CGSizeMake(width, height);
     
     // Override pixel format if user has selected a specific one
     if (![_preferredPixelFormat isEqualToString:@"Auto"]) {
@@ -912,12 +991,51 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
     if (!_camera) return NO;
     
     GError *error = NULL;
+    
+    // Check if exposure time is available
+    if (!arv_camera_is_exposure_time_available(_camera, &error)) {
+        NSLog(@"AravisBridge: Exposure time control not available on this camera");
+        if (error) {
+            NSLog(@"AravisBridge: Error: %s", error->message);
+            g_error_free(error);
+        }
+        return NO;
+    }
+    
+    // Get exposure time bounds
+    double min_exposure, max_exposure;
+    arv_camera_get_exposure_time_bounds(_camera, &min_exposure, &max_exposure, &error);
+    if (error) {
+        NSLog(@"AravisBridge: Failed to get exposure bounds: %s", error->message);
+        g_error_free(error);
+        error = NULL;
+    } else {
+        NSLog(@"AravisBridge: Exposure bounds: %.1f - %.1f µs", min_exposure, max_exposure);
+        
+        // Clamp value to bounds
+        if (exposureTimeUs < min_exposure) {
+            NSLog(@"AravisBridge: Clamping exposure time to minimum: %.1f µs", min_exposure);
+            exposureTimeUs = min_exposure;
+        } else if (exposureTimeUs > max_exposure) {
+            NSLog(@"AravisBridge: Clamping exposure time to maximum: %.1f µs", max_exposure);
+            exposureTimeUs = max_exposure;
+        }
+    }
+    
     arv_camera_set_exposure_time(_camera, exposureTimeUs, &error);
     
     if (error) {
+        NSLog(@"AravisBridge: Failed to set exposure time: %s", error->message);
         g_error_free(error);
         return NO;
     }
+    
+    // Verify the change
+    double actual_exposure = arv_camera_get_exposure_time(_camera, &error);
+    if (!error) {
+        NSLog(@"AravisBridge: Set exposure time to %.1f µs (requested: %.1f µs)", actual_exposure, exposureTimeUs);
+    }
+    
     return YES;
 }
 
@@ -925,12 +1043,51 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
     if (!_camera) return NO;
     
     GError *error = NULL;
+    
+    // Check if gain is available
+    if (!arv_camera_is_gain_available(_camera, &error)) {
+        NSLog(@"AravisBridge: Gain control not available on this camera");
+        if (error) {
+            NSLog(@"AravisBridge: Error: %s", error->message);
+            g_error_free(error);
+        }
+        return NO;
+    }
+    
+    // Get gain bounds
+    double min_gain, max_gain;
+    arv_camera_get_gain_bounds(_camera, &min_gain, &max_gain, &error);
+    if (error) {
+        NSLog(@"AravisBridge: Failed to get gain bounds: %s", error->message);
+        g_error_free(error);
+        error = NULL;
+    } else {
+        NSLog(@"AravisBridge: Gain bounds: %.2f - %.2f", min_gain, max_gain);
+        
+        // Clamp value to bounds
+        if (gain < min_gain) {
+            NSLog(@"AravisBridge: Clamping gain to minimum: %.2f", min_gain);
+            gain = min_gain;
+        } else if (gain > max_gain) {
+            NSLog(@"AravisBridge: Clamping gain to maximum: %.2f", max_gain);
+            gain = max_gain;
+        }
+    }
+    
     arv_camera_set_gain(_camera, gain, &error);
     
     if (error) {
+        NSLog(@"AravisBridge: Failed to set gain: %s", error->message);
         g_error_free(error);
         return NO;
     }
+    
+    // Verify the change
+    double actual_gain = arv_camera_get_gain(_camera, &error);
+    if (!error) {
+        NSLog(@"AravisBridge: Set gain to %.2f (requested: %.2f)", actual_gain, gain);
+    }
+    
     return YES;
 }
 
@@ -954,6 +1111,121 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
         _preferredPixelFormat = format ?: @"Auto";
         NSLog(@"AravisBridge: Preferred pixel format set to: %@", _preferredPixelFormat);
     }
+}
+
+- (BOOL)setResolution:(CGSize)resolution {
+    if (!_camera) return NO;
+    
+    GError *error = NULL;
+    
+    // Stop streaming if active
+    BOOL wasStreaming = (_state == AravisCameraStateStreaming);
+    if (wasStreaming) {
+        [self stopStreaming];
+    }
+    
+    // Set the region of interest (ROI)
+    arv_camera_set_region(_camera, 0, 0, (int)resolution.width, (int)resolution.height, &error);
+    
+    if (error) {
+        NSLog(@"AravisBridge: Failed to set resolution: %s", error->message);
+        g_error_free(error);
+        
+        // Restart streaming if it was active
+        if (wasStreaming) {
+            [self startStreaming];
+        }
+        return NO;
+    }
+    
+    NSLog(@"AravisBridge: Successfully set resolution to %dx%d", (int)resolution.width, (int)resolution.height);
+    
+    // Restart streaming if it was active
+    if (wasStreaming) {
+        [self startStreaming];
+    }
+    
+    return YES;
+}
+
+- (NSDictionary *)getCameraCapabilities {
+    if (!_camera) return @{};
+    
+    NSMutableDictionary *capabilities = [NSMutableDictionary dictionary];
+    GError *error = NULL;
+    
+    // Check exposure time
+    capabilities[@"exposureTimeAvailable"] = @(arv_camera_is_exposure_time_available(_camera, NULL));
+    if ([capabilities[@"exposureTimeAvailable"] boolValue]) {
+        double min_exp, max_exp;
+        arv_camera_get_exposure_time_bounds(_camera, &min_exp, &max_exp, &error);
+        if (!error) {
+            capabilities[@"exposureTimeMin"] = @(min_exp);
+            capabilities[@"exposureTimeMax"] = @(max_exp);
+            capabilities[@"exposureTimeCurrent"] = @(arv_camera_get_exposure_time(_camera, NULL));
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+    }
+    
+    // Check gain
+    capabilities[@"gainAvailable"] = @(arv_camera_is_gain_available(_camera, NULL));
+    if ([capabilities[@"gainAvailable"] boolValue]) {
+        double min_gain, max_gain;
+        arv_camera_get_gain_bounds(_camera, &min_gain, &max_gain, &error);
+        if (!error) {
+            capabilities[@"gainMin"] = @(min_gain);
+            capabilities[@"gainMax"] = @(max_gain);
+            capabilities[@"gainCurrent"] = @(arv_camera_get_gain(_camera, NULL));
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+    }
+    
+    // Check frame rate
+    capabilities[@"frameRateAvailable"] = @(arv_camera_is_frame_rate_available(_camera, NULL));
+    if ([capabilities[@"frameRateAvailable"] boolValue]) {
+        double min_fps, max_fps;
+        arv_camera_get_frame_rate_bounds(_camera, &min_fps, &max_fps, &error);
+        if (!error) {
+            capabilities[@"frameRateMin"] = @(min_fps);
+            capabilities[@"frameRateMax"] = @(max_fps);
+            capabilities[@"frameRateCurrent"] = @(arv_camera_get_frame_rate(_camera, NULL));
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+    }
+    
+    // Get sensor info
+    int sensor_width, sensor_height;
+    arv_camera_get_sensor_size(_camera, &sensor_width, &sensor_height, &error);
+    if (!error) {
+        capabilities[@"sensorWidth"] = @(sensor_width);
+        capabilities[@"sensorHeight"] = @(sensor_height);
+    } else {
+        g_error_free(error);
+        error = NULL;
+    }
+    
+    // Log capabilities
+    NSLog(@"AravisBridge: Camera capabilities:");
+    NSLog(@"  - Exposure time: %@", [capabilities[@"exposureTimeAvailable"] boolValue] ? 
+          [NSString stringWithFormat:@"Yes (%.1f - %.1f µs)", 
+           [capabilities[@"exposureTimeMin"] doubleValue],
+           [capabilities[@"exposureTimeMax"] doubleValue]] : @"No");
+    NSLog(@"  - Gain: %@", [capabilities[@"gainAvailable"] boolValue] ? 
+          [NSString stringWithFormat:@"Yes (%.1f - %.1f)", 
+           [capabilities[@"gainMin"] doubleValue],
+           [capabilities[@"gainMax"] doubleValue]] : @"No");
+    NSLog(@"  - Frame rate: %@", [capabilities[@"frameRateAvailable"] boolValue] ? 
+          [NSString stringWithFormat:@"Yes (%.1f - %.1f fps)", 
+           [capabilities[@"frameRateMin"] doubleValue],
+           [capabilities[@"frameRateMax"] doubleValue]] : @"No");
+    
+    return capabilities;
 }
 
 #pragma mark - Private
@@ -981,6 +1253,10 @@ static ArvGvFakeCamera *_fakeCameraInstance = NULL;
             [self.delegate aravisBridge:self didEncounterError:nsError];
         });
     }
+}
+
+- (CGSize)currentResolution {
+    return _currentResolution;
 }
 
 @end

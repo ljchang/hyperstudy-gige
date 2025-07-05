@@ -46,44 +46,53 @@ import Combine
         
         let workItem = DispatchWorkItem(block: { [weak self] in
             print("GigECameraManager: Calling AravisBridge.discoverCameras()...")
-            let cameras = AravisBridge.discoverCameras()
+            var cameras = AravisBridge.discoverCameras()
             print("GigECameraManager: AravisBridge returned \(cameras.count) cameras")
             
-            if cameras.isEmpty {
-                print("GigECameraManager: No cameras found. Checking if Aravis is initialized...")
-                // Try a direct arv-tool check
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/arv-tool-0.8")
-                let pipe = Pipe()
-                task.standardOutput = pipe
-                task.standardError = pipe
-                
-                do {
-                    try task.run()
-                    task.waitUntilExit()
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    if let output = String(data: data, encoding: .utf8) {
-                        print("GigECameraManager: arv-tool output: \(output)")
-                    }
-                } catch {
-                    print("GigECameraManager: Failed to run arv-tool: \(error)")
+            // Rename any Aravis fake cameras to have a cleaner name
+            cameras = cameras.map { camera in
+                if camera.modelName.contains("Fake") || 
+                   camera.deviceId.contains("Fake") || 
+                   camera.ipAddress == "0.0.0.0" ||
+                   camera.ipAddress == "00:00:00:00:00:00" {
+                    return AravisCamera(
+                        deviceId: camera.deviceId,
+                        name: "Test Camera",
+                        modelName: "Test Camera",
+                        ipAddress: camera.ipAddress
+                    )
                 }
+                return camera
+            }
+            
+            if cameras.isEmpty {
+                print("GigECameraManager: No cameras found")
             }
             
             for camera in cameras {
                 print("  - \(camera.name) at \(camera.ipAddress)")
             }
             
-            // Always add a fake camera option
             var allCameras = cameras
-            let fakeCamera = AravisCamera(
-                deviceId: "aravis-fake-camera",
-                name: "Test Camera (Aravis Simulator)",
-                modelName: "Aravis Fake GV Camera",
-                ipAddress: "127.0.0.1"
-            )
-            allCameras.append(fakeCamera)
-            print("  - \(fakeCamera.name) (Virtual)")
+            
+            // Only add our test camera if Aravis didn't find a fake camera already
+            let hasFakeCamera = cameras.contains { camera in
+                camera.modelName.contains("Fake") || 
+                camera.deviceId.contains("Fake") || 
+                camera.ipAddress == "0.0.0.0" ||
+                camera.ipAddress == "00:00:00:00:00:00"
+            }
+            
+            if !hasFakeCamera {
+                let fakeCamera = AravisCamera(
+                    deviceId: "aravis-fake-camera",
+                    name: "Test Camera (Aravis Simulator)",
+                    modelName: "Aravis Fake GV Camera",
+                    ipAddress: "127.0.0.1"
+                )
+                allCameras.append(fakeCamera)
+                print("  - \(fakeCamera.name) (Virtual)")
+            }
             
             DispatchQueue.main.async {
                 self?.availableCameras = allCameras
@@ -91,11 +100,7 @@ import Combine
                 // Post notification about discovered cameras
                 NotificationCenter.default.post(name: NSNotification.Name("GigECamerasDiscovered"), object: nil)
                 
-                // Auto-connect to first camera if available
-                if let firstCamera = cameras.first, self?.currentCamera == nil {
-                    print("GigECameraManager: Auto-connecting to \(firstCamera.name)")
-                    self?.connect(to: firstCamera)
-                }
+                // Don't auto-connect - let user manually select camera
             }
         })
         
@@ -132,9 +137,22 @@ import Combine
             }
         } else {
             // Normal camera connection
-            guard aravisBridge.connect(to: camera) else {
+            print("GigECameraManager: Connecting to \(camera.modelName) at \(camera.ipAddress)")
+            
+            if !aravisBridge.connect(to: camera) {
+                print("GigECameraManager: ❌ Failed to connect to camera \(camera.modelName)")
+                // Post notification about connection failure
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("GigECameraConnectionFailed"),
+                        object: nil,
+                        userInfo: ["camera": camera, "error": "Connection failed"]
+                    )
+                }
                 return
             }
+            
+            print("GigECameraManager: ✅ Successfully connected to \(camera.modelName)")
             currentCamera = camera
         }
     }
@@ -206,6 +224,35 @@ import Combine
         preferredPixelFormat = format
         // Notify the bridge about format preference
         aravisBridge.setPreferredPixelFormat(format)
+    }
+    
+    func setResolution(_ resolution: CGSize) -> Bool {
+        return aravisBridge.setResolution(resolution)
+    }
+    
+    func getCurrentResolution() -> CGSize? {
+        guard isConnected else { return nil }
+        return aravisBridge.currentResolution()
+    }
+    
+    func getExposureTime() -> Double? {
+        guard isConnected else { return nil }
+        return aravisBridge.exposureTime()
+    }
+    
+    func getGain() -> Double? {
+        guard isConnected else { return nil }
+        return aravisBridge.gain()
+    }
+    
+    func getFrameRate() -> Double? {
+        guard isConnected else { return nil }
+        return aravisBridge.frameRate()
+    }
+    
+    func getCameraCapabilities() -> [String: Any] {
+        guard isConnected else { return [:] }
+        return aravisBridge.getCameraCapabilities() as? [String: Any] ?? [:]
     }
 }
 

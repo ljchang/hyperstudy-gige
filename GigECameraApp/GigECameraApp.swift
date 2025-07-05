@@ -22,7 +22,7 @@ struct GigECameraApp: App {
                     DispatchQueue.main.async {
                         if let window = NSApplication.shared.windows.first {
                             // Set minimum size but allow vertical expansion
-                            window.minSize = NSSize(width: 400, height: 500)
+                            window.minSize = NSSize(width: 400, height: 680)
                             window.maxSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
                             
                             // Make window resizable

@@ -272,6 +272,10 @@ class SourceStreamSource: NSObject, CMIOExtensionStreamSource {
     private var defaultPixelBuffer: CVPixelBuffer?
     private let frameDuration = CMTime(value: 1, timescale: 30)  // 30 fps
     
+    // Keep reference to last frame for new clients
+    private var lastReceivedFrame: CMSampleBuffer?
+    private let frameQueue = DispatchQueue(label: "com.lukechang.lastframe", qos: .userInteractive)
+    
     init(localizedName: String, streamID: UUID, streamFormat: CMIOExtensionStreamFormat, device: CMIOExtensionDevice) {
         self.device = device
         self.streamFormat = streamFormat
@@ -373,7 +377,16 @@ class SourceStreamSource: NSObject, CMIOExtensionStreamSource {
         // Write debug marker to UserDefaults
         if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
             groupDefaults.set("Source stream started at \(Date())", forKey: "Debug_SourceStreamStarted")
+            
+            // IMPORTANT: Notify app that a new client has connected
+            // This will trigger the app to restart camera streaming if needed
+            var streamState = groupDefaults.dictionary(forKey: "StreamState") ?? [:]
+            streamState["newClientConnected"] = true
+            streamState["clientConnectedTime"] = Date().timeIntervalSince1970
+            groupDefaults.set(streamState, forKey: "StreamState")
             groupDefaults.synchronize()
+            
+            NSLog("🎬🎬🎬 Notified app about new client connection")
         }
         
         NSLog("🎬🎬🎬 SOURCE STREAM STARTING - Sink active: \(deviceSource.isSinking)")
@@ -390,6 +403,23 @@ class SourceStreamSource: NSObject, CMIOExtensionStreamSource {
         logger.info("Starting default frame timer...")
         NSLog("🎬🎬🎬 Starting default frame timer")
         startDefaultFrameTimer()
+        
+        // IMPORTANT: Send last frame immediately if we have one
+        // This ensures new clients see video right away instead of black screen
+        frameQueue.async { [weak self] in
+            if let lastFrame = self?.lastReceivedFrame {
+                NSLog("🎬🎬🎬 Sending last received frame to new client immediately")
+                self?.logger.info("Sending cached frame to new client")
+                DispatchQueue.main.async {
+                    self?.sendSampleBuffer(lastFrame)
+                }
+            } else {
+                NSLog("🎬🎬🎬 No cached frame available, sending default frame")
+                DispatchQueue.main.async {
+                    self?.sendDefaultFrame()
+                }
+            }
+        }
     }
     
     func stopStream() throws {
@@ -415,6 +445,11 @@ class SourceStreamSource: NSObject, CMIOExtensionStreamSource {
             NSLog("❌❌❌ stream is NIL in sendSampleBuffer!")
             logger.error("stream is nil - cannot send frame")
             return
+        }
+        
+        // Cache this frame for new clients
+        frameQueue.async { [weak self] in
+            self?.lastReceivedFrame = sampleBuffer
         }
         
         // Use the sample buffer's own timing instead of overriding it
@@ -590,12 +625,20 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         let deviceID = UUID(uuidString: "4B59CDEF-BEA6-52E8-06E7-AD1B8E6B29C4")!
         self.device = CMIOExtensionDevice(localizedName: localizedName, deviceID: deviceID, legacyDeviceID: nil, source: self)
         
+        // Get format from shared UserDefaults
+        let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera")
+        let width = Int32(groupDefaults?.integer(forKey: "SelectedFormatWidth") ?? 1920)
+        let height = Int32(groupDefaults?.integer(forKey: "SelectedFormatHeight") ?? 1080)
+        let fps = groupDefaults?.integer(forKey: "SelectedFormatFPS") ?? 30
+        
+        logger.info("Creating streams with format: \(width)×\(height) @ \(fps)fps")
+        
         // Create video format for both streams
         // Use 420v format which is standard for video
         let formatDict: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            kCVPixelBufferWidthKey as String: 1280,  // Also use standard HD resolution
-            kCVPixelBufferHeightKey as String: 720,
+            kCVPixelBufferWidthKey as String: Int(width),
+            kCVPixelBufferHeightKey as String: Int(height),
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ]
         
@@ -603,8 +646,8 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             codecType: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            width: 1280,
-            height: 720,
+            width: width,
+            height: height,
             extensions: formatDict as CFDictionary,
             formatDescriptionOut: &videoDescription
         )
@@ -616,8 +659,8 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
         
         let videoStreamFormat = CMIOExtensionStreamFormat(
             formatDescription: videoDesc,
-            maxFrameDuration: CMTime(value: 1, timescale: 30),  // 30 fps
-            minFrameDuration: CMTime(value: 1, timescale: 30),  // Fixed 30 fps
+            maxFrameDuration: CMTime(value: 1, timescale: CMTimeScale(fps)),
+            minFrameDuration: CMTime(value: 1, timescale: CMTimeScale(fps)),
             validFrameDurations: nil
         )
         
@@ -650,7 +693,10 @@ class GigEVirtualCameraExtensionDeviceSource: NSObject, CMIOExtensionDeviceSourc
     }
     
     var availableProperties: Set<CMIOExtensionProperty> {
-        return [.deviceTransportType, .deviceModel]
+        return [
+            .deviceTransportType, 
+            .deviceModel
+        ]
     }
     
     func deviceProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionDeviceProperties {

@@ -24,7 +24,23 @@ class CameraManager: NSObject, ObservableObject {
     // MARK: - Published Properties
     @Published var isConnected = false
     @Published var cameraModel = "Unknown"
+    @Published var connectionState = "Idle" // "Idle", "Connecting", "Connected", "Failed"
+    @Published var connectionAttempts = 0
     @Published var currentFormat = "1920×1080 @ 30fps"
+    @Published var availableFormats = [
+        "Auto (Camera Native)",
+        "1920×1080 @ 30fps",
+        "1280×720 @ 30fps", 
+        "640×480 @ 30fps",
+        "512×512 @ 30fps"
+    ]
+    @Published var selectedFormatIndex = 0 {
+        didSet {
+            if selectedFormatIndex != oldValue {
+                updateSelectedFormat()
+            }
+        }
+    }
     @Published var availableCameras: [AravisCamera] = []
     @Published var currentPixelFormat = "Auto" {
         didSet {
@@ -37,6 +53,40 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     @Published var availablePixelFormats = ["Auto", "Bayer GR8", "Bayer RG8", "Bayer GB8", "Bayer BG8", "Mono8", "RGB8"]
+    
+    // Camera controls
+    @Published var exposureTime: Double = 10000 { // microseconds (10ms default)
+        didSet {
+            if exposureTime != oldValue && isConnected {
+                updateExposureTime()
+            }
+        }
+    }
+    @Published var gain: Double = 1.0 { // 1.0 = no gain
+        didSet {
+            if gain != oldValue && isConnected {
+                updateGain()
+            }
+        }
+    }
+    @Published var frameRate: Double = 30.0 {
+        didSet {
+            if frameRate != oldValue && isConnected {
+                updateFrameRate()
+            }
+        }
+    }
+    
+    // Camera capability flags
+    @Published var exposureTimeAvailable = false
+    @Published var exposureTimeMin: Double = 100
+    @Published var exposureTimeMax: Double = 100000
+    @Published var gainAvailable = false
+    @Published var gainMin: Double = 0.5
+    @Published var gainMax: Double = 16.0
+    @Published var frameRateAvailable = false
+    @Published var frameRateMin: Double = 1
+    @Published var frameRateMax: Double = 60
     @Published var selectedCameraId: String? = nil {
         didSet {
             // Only connect if the selection actually changed and we're not already connected to this camera
@@ -44,6 +94,9 @@ class CameraManager: NSObject, ObservableObject {
                 if let cameraId = selectedCameraId {
                     let gigEManager = GigECameraManager.shared
                     if gigEManager.currentCamera?.deviceId != cameraId {
+                        // Reset status immediately to show we're trying
+                        isConnected = false
+                        cameraModel = "Connecting..."
                         connectToCamera(withId: cameraId)
                     }
                 } else {
@@ -60,6 +113,8 @@ class CameraManager: NSObject, ObservableObject {
     private var frameCount: Int = 0
     private var streamStateObserver: NSKeyValueObservation?
     private let appGroupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera")
+    private let networkMonitor = NetworkInterfaceMonitor()
+    private var lastDiscoveryTime = Date.distantPast
     
     // MARK: - Computed Properties
     var statusText: String {
@@ -80,25 +135,82 @@ class CameraManager: NSObject, ObservableObject {
     
     private let logger = Logger(subsystem: CameraConstants.BundleID.app, category: "CameraManager")
     
+    // Format definitions matching the strings
+    private let formatSpecs: [(width: Int, height: Int, fps: Int)] = [
+        (0, 0, 0),  // Auto - will use camera native resolution
+        (1920, 1080, 30),
+        (1280, 720, 30),
+        (640, 480, 30),
+        (512, 512, 30)
+    ]
+    
     // MARK: - Initialization
     private override init() {
         super.init()
         logger.info("CameraManager init called")
+        
+        // Clear any saved camera preferences to ensure fresh start
+        UserDefaults.standard.removeObject(forKey: CameraConstants.UserDefaultsKeys.lastConnectedCamera)
+        UserDefaults.standard.removeObject(forKey: "LastConnectedCameraID")
+        
+        // Initialize format in shared UserDefaults
+        if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
+            // Set default format if not already set
+            if groupDefaults.object(forKey: "SelectedFormatWidth") == nil {
+                groupDefaults.set(1920, forKey: "SelectedFormatWidth")
+                groupDefaults.set(1080, forKey: "SelectedFormatHeight") 
+                groupDefaults.set(30, forKey: "SelectedFormatFPS")
+                groupDefaults.synchronize()
+            }
+        }
+        
         setupNotifications()
         setupFrameHandler()  // Set up frame handler for IOSurface writer
         
-        // Check for available cameras after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // Start discovery immediately on init
+        logger.info("Starting immediate camera discovery on init")
+        GigECameraManager.shared.discoverCameras()
+        
+        // Also check connection status after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.checkCameraConnection()
         }
+        
+        // Setup network monitoring for camera hot-plugging
+        setupNetworkMonitoring()
     }
     
     deinit {
         streamStateObserver?.invalidate()
+        networkMonitor.stop()
     }
     
     // MARK: - Private Methods
     private var cancellables = Set<AnyCancellable>()
+    
+    private func setupNetworkMonitoring() {
+        networkMonitor.onNetworkChange = { [weak self] in
+            guard let self = self else { return }
+            
+            // Debounce discovery calls - don't run more than once per 2 seconds
+            let timeSinceLastDiscovery = Date().timeIntervalSince(self.lastDiscoveryTime)
+            guard timeSinceLastDiscovery > 2.0 else {
+                self.logger.info("Skipping discovery - too soon since last check (\(timeSinceLastDiscovery)s)")
+                return
+            }
+            
+            self.lastDiscoveryTime = Date()
+            self.logger.info("Network change detected - triggering camera discovery")
+            
+            // Run discovery
+            GigECameraManager.shared.discoverCameras()
+            
+            // If we lost connection, also check connection status
+            if self.isConnected {
+                self.checkCameraConnection()
+            }
+        }
+    }
     
     
     private func checkCameraConnection() {
@@ -119,14 +231,15 @@ class CameraManager: NSObject, ObservableObject {
             isConnected = true
             selectedCameraId = camera.deviceId
             
-            // Save for next launch
-            UserDefaults.standard.set(camera.modelName, forKey: CameraConstants.UserDefaultsKeys.lastConnectedCamera)
+            // Don't save camera selection - let user choose each time
         } else {
             print("CameraManager: Not connected, triggering camera discovery...")
             isConnected = false
             
             // Try to discover cameras
             gigEManager.discoverCameras()
+            
+            // Don't auto-reconnect - let user manually select camera
         }
         
         // Listen for camera list updates
@@ -141,15 +254,130 @@ class CameraManager: NSObject, ObservableObject {
     private func connectToCamera(withId cameraId: String) {
         let gigEManager = GigECameraManager.shared
         
+        logger.info("Attempting to connect to camera: \(cameraId)")
+        connectionState = "Connecting"
+        connectionAttempts += 1
+        
         if let camera = availableCameras.first(where: { $0.deviceId == cameraId }) {
-            gigEManager.connect(to: camera)
+            logger.info("Found camera in list: \(camera.modelName)")
+            cameraModel = "Connecting to \(camera.modelName)..."
             
-            // Always auto-start streaming after connection - this follows the producer model
-            // The app should always be producing frames when connected
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                if gigEManager.isConnected && !gigEManager.isStreaming {
-                    self.logger.info("Auto-starting streaming after connection (producer model)...")
-                    gigEManager.startStreaming()
+            // Move connection to background thread to avoid blocking UI
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                // Disconnect any existing camera first
+                if gigEManager.isConnected {
+                    self?.logger.info("Disconnecting current camera before connecting to new one")
+                    gigEManager.disconnect()
+                    Thread.sleep(forTimeInterval: 1.0) // Give more time for cleanup
+                }
+                
+                // Add a small delay to let the network settle
+                Thread.sleep(forTimeInterval: 0.5)
+                
+                // Attempt connection on background thread
+                self?.logger.info("Calling connect for \(camera.modelName)")
+                gigEManager.connect(to: camera)
+                
+                // Update UI on main thread
+                DispatchQueue.main.async {
+                    self?.checkConnectionStatus(for: camera, cameraId: cameraId)
+                }
+            }
+        } else {
+            logger.error("Camera not found in available cameras list")
+            connectionState = "Failed"
+            cameraModel = "Camera not found"
+        }
+    }
+    
+    private func checkConnectionStatus(for camera: AravisCamera, cameraId: String) {
+        let gigEManager = GigECameraManager.shared
+        
+        // Schedule a check after a delay - GigE cameras need more time
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            if gigEManager.isConnected {
+                self?.logger.info("✅ Connection successful!")
+                self?.connectionState = "Connected"
+                self?.cameraModel = camera.modelName
+                self?.isConnected = true
+                
+                // Load camera settings
+                self?.loadCameraSettings()
+                
+                // Apply current format if not Auto
+                if let self = self, self.selectedFormatIndex != 0 {
+                    let format = self.formatSpecs[self.selectedFormatIndex]
+                    let resolution = CGSize(width: format.width, height: format.height)
+                    if GigECameraManager.shared.setResolution(resolution) {
+                        self.logger.info("Applied format on connection: \(format.width)×\(format.height)")
+                    }
+                    // Also apply frame rate
+                    GigECameraManager.shared.setFrameRate(Double(format.fps))
+                }
+                
+                // Ensure sink is connected before starting streaming
+                if self?.isFrameSenderConnected == true {
+                    if !gigEManager.isStreaming {
+                        self?.logger.info("Starting streaming (sink already connected)...")
+                        gigEManager.startStreaming()
+                    }
+                } else {
+                    self?.logger.info("Camera connected but sink not ready - waiting for sink connection...")
+                    // The sink connector callbacks will start streaming when ready
+                }
+            } else {
+                self?.logger.warning("⚠️ First connection attempt failed, retrying...")
+                self?.cameraModel = "Retrying connection..."
+                
+                // Retry connection on background thread
+                DispatchQueue.global(qos: .userInitiated).async {
+                    // Wait a bit before retry
+                    Thread.sleep(forTimeInterval: 1.0)
+                    
+                    gigEManager.connect(to: camera)
+                    
+                    // Final check after retry - give more time
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                        if gigEManager.isConnected {
+                            self?.logger.info("✅ Connection successful after retry")
+                            self?.connectionState = "Connected"
+                            self?.cameraModel = camera.modelName
+                            self?.isConnected = true
+                            
+                            // Load camera settings
+                            self?.loadCameraSettings()
+                            
+                            // Apply current format if not Auto
+                            if let self = self, self.selectedFormatIndex != 0 {
+                                let format = self.formatSpecs[self.selectedFormatIndex]
+                                let resolution = CGSize(width: format.width, height: format.height)
+                                if GigECameraManager.shared.setResolution(resolution) {
+                                    self.logger.info("Applied format on retry connection: \(format.width)×\(format.height)")
+                                }
+                                // Also apply frame rate
+                                GigECameraManager.shared.setFrameRate(Double(format.fps))
+                            }
+                            
+                            // Ensure sink is connected before starting streaming
+                            if self?.isFrameSenderConnected == true {
+                                if !gigEManager.isStreaming {
+                                    self?.logger.info("Starting streaming after retry (sink already connected)...")
+                                    gigEManager.startStreaming()
+                                }
+                            } else {
+                                self?.logger.info("Camera connected after retry but sink not ready - waiting for sink connection...")
+                                // The sink connector callbacks will start streaming when ready
+                            }
+                        } else {
+                            self?.logger.error("❌ Failed to connect after \(self?.connectionAttempts ?? 0) attempts")
+                            self?.connectionState = "Failed"
+                            self?.cameraModel = "Connection failed"
+                            self?.isConnected = false
+                            
+                            // Don't reset selection - let user retry manually
+                            // self?.selectedCameraId = nil
+                        }
+                    }
                 }
             }
         }
@@ -160,16 +388,17 @@ class CameraManager: NSObject, ObservableObject {
         gigEManager.disconnect()
         isConnected = false
         cameraModel = "Unknown"
+        connectionState = "Idle"
+        connectionAttempts = 0
     }
     
     @objc private func handleCameraListUpdate() {
         let gigEManager = GigECameraManager.shared
         availableCameras = gigEManager.availableCameras
         
-        // Auto-select if only one camera is available and none is selected
-        if availableCameras.count == 1 && selectedCameraId == nil {
-            selectedCameraId = availableCameras[0].deviceId
-        }
+        logger.info("Camera list updated: \(self.availableCameras.count) cameras found")
+        
+        // Don't auto-select cameras - let user manually choose
     }
     
     private func setupNotifications() {
@@ -193,6 +422,14 @@ class CameraManager: NSObject, ObservableObject {
             self,
             selector: #selector(handleGigECameraStateChange),
             name: NSNotification.Name("GigECameraStateChanged"),
+            object: nil
+        )
+        
+        // Listen for connection failures
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleConnectionFailure),
+            name: NSNotification.Name("GigECameraConnectionFailed"),
             object: nil
         )
         
@@ -230,8 +467,7 @@ class CameraManager: NSObject, ObservableObject {
             cameraModel = model
             isConnected = true
             
-            // Save for next launch
-            UserDefaults.standard.set(model, forKey: CameraConstants.UserDefaultsKeys.lastConnectedCamera)
+            // Don't save camera selection - let user choose each time
         }
     }
     
@@ -261,9 +497,7 @@ class CameraManager: NSObject, ObservableObject {
             }
         } else {
             isConnected = false
-            if gigEManager.currentCamera == nil && selectedCameraId != nil {
-                selectedCameraId = nil
-            }
+            // Don't clear selectedCameraId - keep user's selection even if disconnected
         }
     }
     
@@ -277,29 +511,96 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
+    @objc private func handleConnectionFailure(_ notification: Notification) {
+        logger.error("Camera connection failed")
+        
+        // Reset UI state
+        isConnected = false
+        cameraModel = "Unknown"
+        
+        // Optionally show error to user
+        if let userInfo = notification.userInfo,
+           let camera = userInfo["camera"] as? AravisCamera {
+            logger.error("Failed to connect to: \(camera.modelName)")
+        }
+    }
+    
     @objc private func handleStreamStateChange() {
         // Check if extension is requesting frames
         guard let defaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera"),
-              let state = defaults.dictionary(forKey: "StreamState"),
-              let isActive = state["streamActive"] as? Bool else {
+              let state = defaults.dictionary(forKey: "StreamState") else {
             return
         }
         
-        if isActive {
-            logger.info("Extension requesting frames")
+        // Check for new client connection
+        if let newClientConnected = state["newClientConnected"] as? Bool, newClientConnected {
+            logger.info("New client connected - restarting camera stream to ensure frames flow")
             
-            // The property listener will handle sink connection automatically
-            // We just need to ensure Aravis is streaming
-            if isConnected && !GigECameraManager.shared.isStreaming {
-                logger.info("Starting Aravis streaming in response to extension request")
-                GigECameraManager.shared.startStreaming()
+            // Clear the flag
+            var updatedState = state
+            updatedState["newClientConnected"] = false
+            defaults.set(updatedState, forKey: "StreamState")
+            defaults.synchronize()
+            
+            // If camera is connected, ensure sink connection and restart streaming
+            if isConnected {
+                let gigEManager = GigECameraManager.shared
+                
+                // First ensure sink is connected
+                if !isFrameSenderConnected {
+                    logger.info("New client connected but sink not ready - reconnecting sink first...")
+                    sinkConnector.disconnect()
+                    let connected = sinkConnector.connect()
+                    logger.info("Sink reconnection attempt returned: \(connected)")
+                    
+                    // Give sink time to connect before starting stream
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if self.isFrameSenderConnected {
+                            self.logger.info("Sink connected, starting stream for new client...")
+                            gigEManager.startStreaming()
+                        } else {
+                            self.logger.warning("Sink still not connected after reconnection attempt")
+                            // Try streaming anyway
+                            gigEManager.startStreaming()
+                        }
+                    }
+                } else {
+                    // Sink already connected, just restart streaming
+                    if gigEManager.isStreaming {
+                        logger.info("Stopping current stream...")
+                        gigEManager.stopStreaming()
+                        
+                        // Small delay before restarting
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.logger.info("Restarting stream for new client...")
+                            gigEManager.startStreaming()
+                        }
+                    } else {
+                        logger.info("Starting stream for new client...")
+                        gigEManager.startStreaming()
+                    }
+                }
             }
-        } else {
-            logger.info("Extension stopped requesting frames")
-            // Optionally stop streaming
-            if GigECameraManager.shared.isStreaming {
-                logger.info("Stopping Aravis streaming")
-                GigECameraManager.shared.stopStreaming()
+        }
+        
+        // Check if streaming is active
+        if let isActive = state["streamActive"] as? Bool {
+            if isActive {
+                logger.info("Extension requesting frames")
+                
+                // The property listener will handle sink connection automatically
+                // We just need to ensure Aravis is streaming
+                if isConnected && !GigECameraManager.shared.isStreaming {
+                    logger.info("Starting Aravis streaming in response to extension request")
+                    GigECameraManager.shared.startStreaming()
+                }
+            } else {
+                logger.info("Extension stopped requesting frames")
+                // Optionally stop streaming
+                if GigECameraManager.shared.isStreaming {
+                    logger.info("Stopping Aravis streaming")
+                    GigECameraManager.shared.stopStreaming()
+                }
             }
         }
     }
@@ -313,6 +614,39 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
+    // MARK: - Public Methods
+    
+    func refreshCameraList() {
+        logger.info("Manual camera refresh requested")
+        GigECameraManager.shared.discoverCameras()
+    }
+    
+    func retryConnection() {
+        guard let cameraId = selectedCameraId else { return }
+        logger.info("Manual connection retry requested")
+        connectionAttempts = 0 // Reset counter for manual retry
+        connectToCamera(withId: cameraId)
+    }
+    
+    func resetConnection() {
+        logger.info("Resetting connection state")
+        let gigEManager = GigECameraManager.shared
+        
+        // Force disconnect
+        gigEManager.disconnect()
+        
+        // Reset state
+        isConnected = false
+        connectionState = "Idle"
+        cameraModel = "Unknown"
+        
+        // Clear and re-discover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.refreshCameraList()
+        }
+    }
+    
+    
     // MARK: - Public Methods for Frame Sender
     func retryFrameSenderConnection() {
         logger.info("Retrying CMIO sink connection...")
@@ -320,7 +654,7 @@ class CameraManager: NSObject, ObservableObject {
         // With property listeners, we just need to restart the listener
         sinkConnector.disconnect()
         
-        // The property listener will automatically detect and connect when sink is available
+        // The property listener will automatically detect and connect when sink stream is available
         logger.info("Property listener will automatically reconnect when sink stream is available")
     }
     
@@ -425,6 +759,42 @@ class CameraManager: NSObject, ObservableObject {
         let connected = sinkConnector.connect()
         logger.info("Initial sink connector connect returned: \(connected)")
         
+        // If initial connection fails, set up automatic retry
+        if !connected {
+            logger.info("Initial sink connection failed - setting up automatic retry...")
+            var retryCount = 0
+            let maxRetries = 5
+            
+            func attemptConnection() {
+                guard retryCount < maxRetries else {
+                    self.logger.warning("Max sink connection retries reached (\(maxRetries))")
+                    return
+                }
+                
+                retryCount += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(retryCount) * 1.5) { [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Don't retry if already connected
+                    guard !self.isFrameSenderConnected else {
+                        self.logger.info("Sink already connected, stopping retry")
+                        return
+                    }
+                    
+                    self.logger.info("Sink connection retry \(retryCount)/\(maxRetries)...")
+                    let retryConnected = self.sinkConnector.connect()
+                    
+                    if retryConnected {
+                        self.logger.info("✅ Sink connected on retry \(retryCount)")
+                    } else if retryCount < maxRetries {
+                        attemptConnection() // Try again
+                    }
+                }
+            }
+            
+            attemptConnection()
+        }
+        
         logger.info("Frame handler setup complete - waiting for sink stream discovery")
     }
     
@@ -464,5 +834,211 @@ class CameraManager: NSObject, ObservableObject {
     func getPerformanceMetrics() -> (fps: Double, framesTotal: UInt64, framesDropped: UInt64) {
         // For now, return basic metrics from frame count
         return (30.0, UInt64(frameCount), 0)
+    }
+    
+    // MARK: - Format Management
+    
+    private func updateSelectedFormat() {
+        guard selectedFormatIndex < availableFormats.count else { return }
+        
+        currentFormat = availableFormats[selectedFormatIndex]
+        let format = formatSpecs[selectedFormatIndex]
+        
+        // Handle Auto format
+        var width = format.width
+        var height = format.height
+        var fps = format.fps
+        
+        if selectedFormatIndex == 0 { // Auto
+            // Get camera native resolution if available
+            if let resolution = GigECameraManager.shared.getCurrentResolution() {
+                width = Int(resolution.width)
+                height = Int(resolution.height)
+                fps = 30 // Default FPS for now
+                currentFormat = "\(width)×\(height) @ \(fps)fps (Native)"
+                logger.info("Using camera native resolution: \(width)×\(height)")
+            } else {
+                // Fallback to default if camera not connected
+                width = 1920
+                height = 1080
+                fps = 30
+            }
+        }
+        
+        // Save to shared UserDefaults for extension
+        if let groupDefaults = UserDefaults(suiteName: "group.S368GH6KF7.com.lukechang.GigEVirtualCamera") {
+            groupDefaults.set(width, forKey: "SelectedFormatWidth")
+            groupDefaults.set(height, forKey: "SelectedFormatHeight")
+            groupDefaults.set(fps, forKey: "SelectedFormatFPS")
+            groupDefaults.synchronize()
+            
+            logger.info("Updated format to \(width)×\(height) @ \(fps)fps")
+            
+            // Notify extension about format change
+            var streamState = groupDefaults.dictionary(forKey: "StreamState") ?? [:]
+            streamState["formatChanged"] = true
+            streamState["formatChangeTime"] = Date().timeIntervalSince1970
+            groupDefaults.set(streamState, forKey: "StreamState")
+            groupDefaults.synchronize()
+        }
+        
+        // Apply resolution to camera if connected
+        if isConnected && selectedFormatIndex != 0 { // Not Auto
+            let resolution = CGSize(width: width, height: height)
+            if GigECameraManager.shared.setResolution(resolution) {
+                logger.info("Successfully set camera resolution to \(width)×\(height)")
+            } else {
+                logger.warning("Failed to set camera resolution")
+            }
+        }
+        
+        // If streaming, we might need to restart
+        if isConnected && GigECameraManager.shared.isStreaming {
+            logger.info("Format changed while streaming - restarting stream")
+            
+            GigECameraManager.shared.stopStreaming()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                GigECameraManager.shared.startStreaming()
+            }
+        }
+    }
+    
+    // MARK: - Camera Control Methods
+    
+    private func updateExposureTime() {
+        guard isConnected else {
+            logger.warning("Cannot update exposure time - not connected")
+            return
+        }
+        let gigEManager = GigECameraManager.shared
+        gigEManager.setExposureTime(exposureTime)
+        logger.info("Updated exposure time to \(self.exposureTime) µs")
+        
+        // Verify the change was applied
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            if let actualExposure = gigEManager.getExposureTime() {
+                self?.logger.info("Verified exposure time: \(actualExposure) µs")
+            }
+        }
+    }
+    
+    private func updateGain() {
+        guard isConnected else {
+            logger.warning("Cannot update gain - not connected")
+            return
+        }
+        let gigEManager = GigECameraManager.shared
+        gigEManager.setGain(gain)
+        logger.info("Updated gain to \(self.gain)")
+        
+        // Verify the change was applied
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            if let actualGain = gigEManager.getGain() {
+                self?.logger.info("Verified gain: \(actualGain)")
+            }
+        }
+    }
+    
+    private func updateFrameRate() {
+        guard isConnected else {
+            logger.warning("Cannot update frame rate - not connected")
+            return
+        }
+        let gigEManager = GigECameraManager.shared
+        gigEManager.setFrameRate(frameRate)
+        logger.info("Updated frame rate to \(self.frameRate) fps")
+        
+        // Verify the change was applied
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            if let actualFPS = gigEManager.getFrameRate() {
+                self?.logger.info("Verified frame rate: \(actualFPS) fps")
+            }
+        }
+    }
+    
+    func loadCameraSettings() {
+        guard isConnected else { return }
+        
+        let gigEManager = GigECameraManager.shared
+        
+        // First, get camera capabilities
+        let capabilities = gigEManager.getCameraCapabilities()
+        logger.info("Loading camera capabilities...")
+        
+        // Update exposure time capabilities
+        if let expAvailable = capabilities["exposureTimeAvailable"] as? Bool {
+            self.exposureTimeAvailable = expAvailable
+            if expAvailable {
+                if let min = capabilities["exposureTimeMin"] as? Double {
+                    self.exposureTimeMin = min
+                }
+                if let max = capabilities["exposureTimeMax"] as? Double {
+                    self.exposureTimeMax = max
+                }
+                logger.info("Exposure time available: \(self.exposureTimeMin) - \(self.exposureTimeMax) µs")
+            } else {
+                logger.warning("Exposure time control not available on this camera")
+            }
+        }
+        
+        // Update gain capabilities
+        if let gainAvail = capabilities["gainAvailable"] as? Bool {
+            self.gainAvailable = gainAvail
+            if gainAvail {
+                if let min = capabilities["gainMin"] as? Double {
+                    self.gainMin = min
+                }
+                if let max = capabilities["gainMax"] as? Double {
+                    self.gainMax = max
+                }
+                logger.info("Gain available: \(self.gainMin) - \(self.gainMax)")
+            } else {
+                logger.warning("Gain control not available on this camera")
+            }
+        }
+        
+        // Update frame rate capabilities
+        if let fpsAvail = capabilities["frameRateAvailable"] as? Bool {
+            self.frameRateAvailable = fpsAvail
+            if fpsAvail {
+                if let min = capabilities["frameRateMin"] as? Double {
+                    self.frameRateMin = min
+                }
+                if let max = capabilities["frameRateMax"] as? Double {
+                    self.frameRateMax = max
+                }
+                logger.info("Frame rate available: \(self.frameRateMin) - \(self.frameRateMax) fps")
+            } else {
+                logger.warning("Frame rate control not available on this camera")
+            }
+        }
+        
+        // Get current values from camera only if we haven't set them yet
+        // This prevents overriding user's manual settings
+        if self.exposureTimeAvailable, let currentExposure = gigEManager.getExposureTime() {
+            // Only update if significantly different (avoid floating point issues)
+            if abs(self.exposureTime - currentExposure) > 1.0 {
+                self.exposureTime = currentExposure
+                logger.info("Loaded exposure from camera: \(currentExposure) µs")
+            }
+        }
+        
+        if self.gainAvailable, let currentGain = gigEManager.getGain() {
+            // Only update if significantly different
+            if abs(self.gain - currentGain) > 0.01 {
+                self.gain = currentGain
+                logger.info("Loaded gain from camera: \(currentGain)")
+            }
+        }
+        
+        if self.frameRateAvailable, let currentFPS = gigEManager.getFrameRate() {
+            // Only update if significantly different
+            if abs(self.frameRate - currentFPS) > 0.1 {
+                self.frameRate = currentFPS
+                logger.info("Loaded frame rate from camera: \(currentFPS) fps")
+            }
+        }
+        
+        logger.info("Camera settings - Exposure: \(self.exposureTime)µs, Gain: \(self.gain), FPS: \(self.frameRate)")
     }
 }

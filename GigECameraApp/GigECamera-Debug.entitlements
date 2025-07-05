@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.S368GH6KF7.com.lukechang.GigEVirtualCamera</string>
+		<string>group.$(TeamIdentifierPrefix)com.lukechang.GigEVirtualCamera</string>
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -20,6 +20,7 @@
 		7FB68897794C86621A4AE2B3 /* CMIOExtensionProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = A84F71AC554427A9375C99C8 /* CMIOExtensionProperties.swift */; };
 		81F05D49548AF55D7ADC4227 /* GigECameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0D776346DD1FED961B677F /* GigECameraManager.swift */; };
 		91AC552492FCCD5F93B1787C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25B0B794181488800BEAEB3A /* ContentView.swift */; };
+		949EB29990CE62FC17B020BD /* NetworkInterfaceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6BE2633D6C2FA2CC3E89C2 /* NetworkInterfaceMonitor.swift */; };
 		9E7E34ED3E312F662001A0DB /* AravisBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 325D10A0755501761E5441E8 /* AravisBridge.mm */; };
 		AACA1C80D99BFF54D3C4A2E6 /* PixelBufferHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BED1F750517D3B532E43A04 /* PixelBufferHelpers.swift */; };
 		AF4A0E92730A86ED0B4456B9 /* SharedMemoryFrameSharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C41DAD3ECC805AB10C46ED3 /* SharedMemoryFrameSharing.swift */; };
@@ -80,6 +81,7 @@
 		9BED1F750517D3B532E43A04 /* PixelBufferHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelBufferHelpers.swift; sourceTree = "<group>"; };
 		A19F5AC376905E28D984426A /* GigECameraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GigECameraApp.swift; sourceTree = "<group>"; };
 		A84F71AC554427A9375C99C8 /* CMIOExtensionProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CMIOExtensionProperties.swift; sourceTree = "<group>"; };
+		AF6BE2633D6C2FA2CC3E89C2 /* NetworkInterfaceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkInterfaceMonitor.swift; sourceTree = "<group>"; };
 		B15570879E141C8029D5D2E9 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		C024BFEF3CAF28E089A772F0 /* CMIOPropertyListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CMIOPropertyListener.swift; sourceTree = "<group>"; };
 		C0ABA500E74E58DA7AAFCC94 /* IOSurfaceFrameSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSurfaceFrameSharing.swift; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 				5B545C2BFB14C5554212441D /* Info.plist */,
 				C0ABA500E74E58DA7AAFCC94 /* IOSurfaceFrameSharing.swift */,
 				6B4DE4FFBE5D48C930D1759C /* IOSurfaceFrameWriter.swift */,
+				AF6BE2633D6C2FA2CC3E89C2 /* NetworkInterfaceMonitor.swift */,
 				D69EA7B08E39383581459407 /* PixelBufferConverter.swift */,
 				8C41DAD3ECC805AB10C46ED3 /* SharedMemoryFrameSharing.swift */,
 			);
@@ -232,14 +235,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-					63958092D7638492226B4026 = {
-						DevelopmentTeam = S368GH6KF7;
-					};
-					995849C2C74E72B25835558E = {
-						DevelopmentTeam = S368GH6KF7;
-					};
-				};
 			};
 			buildConfigurationList = D6222442777D799D0C637853 /* Build configuration list for PBXProject "GigEVirtualCamera" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -251,7 +246,6 @@
 			);
 			mainGroup = 4339E87F6BCB3F9645DC377F;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 54;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -328,7 +322,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"${CONFIGURATION}\" = \"Debug\" ] || [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  \"${SRCROOT}/Scripts/bundle_aravis.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \"${SRCROOT}/Scripts/fix_rpaths.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \n  # Sign all bundled libraries\n  echo \"Signing bundled libraries...\"\n  find \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks\" -name \"*.dylib\" -type f | while read lib; do\n    echo \"Signing: $(basename \"$lib\")\"\n    codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"$lib\" || true\n  done\nfi\n";
+			shellScript = "if [ \"${CONFIGURATION}\" = \"Debug\" ] || [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  \"${SRCROOT}/Scripts/bundle_aravis.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \"${SRCROOT}/Scripts/fix_rpaths.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \n  # Sign the bundled libraries\n  \"${SRCROOT}/Scripts/sign_bundled_libraries.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\n  \n  echo \"Libraries bundled and signed successfully\"\nfi\n";
 		};
 		87BC50741C70F1B237FBFA1B /* Copy to Applications */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -347,7 +341,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Copy app to /Applications for System Extension activation\nif [ \"${CONFIGURATION}\" = \"Debug\" ] || [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  echo \"Copying app to /Applications...\"\n  rm -rf \"/Applications/${PRODUCT_NAME}.app\" 2>/dev/null || true\n  # Use ditto to preserve code signatures and extended attributes\n  ditto \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\" \"/Applications/${PRODUCT_NAME}.app\"\n  echo \"App copied to /Applications/${PRODUCT_NAME}.app\"\n  \n  # Fix extension naming in /Applications\n  if [ -d \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension\" ]; then\n    echo \"Fixing extension naming...\"\n    mv \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension\" \\\n       \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension\"\n    \n    # Sign all libraries first\n    echo \"Signing libraries...\"\n    find \"/Applications/${PRODUCT_NAME}.app/Contents/Frameworks\" -name \"*.dylib\" -type f | while read lib; do\n      codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"$lib\" || true\n    done\n    \n    # Remove provisioning profile from extension (system extensions don't use them)\n    echo \"Removing extension provisioning profile...\"\n    rm -f \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/embedded.provisionprofile\"\n    \n    # Re-sign extension with expanded entitlements\n    echo \"Signing extension...\"\n    TEMP_EXT_ENTITLEMENTS=\"/tmp/expanded-ext-entitlements.plist\"\n    cp \"${SRCROOT}/GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements\" \"${TEMP_EXT_ENTITLEMENTS}\"\n    codesign --force --deep --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\\n      --entitlements \"${TEMP_EXT_ENTITLEMENTS}\" \\\n      --timestamp=none \\\n      \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension\"\n    rm -f \"${TEMP_EXT_ENTITLEMENTS}\"\n    \n    # Re-sign the entire app with expanded entitlements\n    echo \"Re-signing entire app...\"\n    TEMP_APP_ENTITLEMENTS=\"/tmp/expanded-app-entitlements.plist\"\n    if [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n      cp \"${SRCROOT}/GigECameraApp/GigECamera-Debug.entitlements\" \"${TEMP_APP_ENTITLEMENTS}\"\n    else\n      cp \"${SRCROOT}/GigECameraApp/GigECamera-Release.entitlements\" \"${TEMP_APP_ENTITLEMENTS}\"\n    fi\n    \n    codesign --force --deep --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\\n      --entitlements \"${TEMP_APP_ENTITLEMENTS}\" \\\n      --options runtime \\\n      --timestamp=none \\\n      \"/Applications/${PRODUCT_NAME}.app\"\n    rm -f \"${TEMP_APP_ENTITLEMENTS}\"\n    \n    echo \"App re-signed successfully\"\n  fi\n  \n  # Remove provisioning profile for Release builds (Developer ID doesn't use them)\n  if [ \"${CONFIGURATION}\" = \"Release\" ]; then\n    echo \"Removing provisioning profile for Developer ID distribution...\"\n    rm -f \"/Applications/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile\" 2>/dev/null || true\n    rm -f \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile\" 2>/dev/null || true\n  fi\nfi\n";
+			shellScript = "# Copy app to /Applications for System Extension activation\nif [ \"${CONFIGURATION}\" = \"Debug\" ] || [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  echo \"Copying app to /Applications...\"\n  rm -rf \"/Applications/${PRODUCT_NAME}.app\" 2>/dev/null || true\n  # Use ditto to preserve code signatures and extended attributes\n  ditto \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\" \"/Applications/${PRODUCT_NAME}.app\"\n  echo \"App copied to /Applications/${PRODUCT_NAME}.app\"\n  \n  # Fix extension naming in /Applications\n  if [ -d \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension\" ]; then\n    echo \"Fixing extension naming...\"\n    mv \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension\" \\\n       \"/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension\"\n    \n    # Just copy without re-signing - let Xcode handle the signing\n    echo \"App copied successfully\"\n  fi\n  \n  # Remove provisioning profile for Release builds (Developer ID doesn't use them)\n  if [ \"${CONFIGURATION}\" = \"Release\" ]; then\n    echo \"Removing provisioning profile for Developer ID distribution...\"\n    rm -f \"/Applications/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile\" 2>/dev/null || true\n    rm -f \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/embedded.provisionprofile\" 2>/dev/null || true\n  fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -380,6 +374,7 @@
 				81F05D49548AF55D7ADC4227 /* GigECameraManager.swift in Sources */,
 				EDC3A953D1F86A9121CFAF0D /* IOSurfaceFrameSharing.swift in Sources */,
 				ECFB87687A5A53E7FD346356 /* IOSurfaceFrameWriter.swift in Sources */,
+				949EB29990CE62FC17B020BD /* NetworkInterfaceMonitor.swift in Sources */,
 				FF2ED4EAB332C4A9E072E621 /* PixelBufferConverter.swift in Sources */,
 				AACA1C80D99BFF54D3C4A2E6 /* PixelBufferHelpers.swift in Sources */,
 				AF4A0E92730A86ED0B4456B9 /* SharedMemoryFrameSharing.swift in Sources */,
@@ -483,8 +478,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GigECameraApp/GigECamera.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = GigECameraApp/Info.plist;
 				INFOPLIST_KEY_NSSystemExtensionInstallationPrompt = "GigE Virtual Camera needs to install a system extension to provide virtual camera functionality.";
@@ -495,6 +494,8 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Virtual Camera Dev";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "GigECameraApp/GigEVirtualCamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -505,21 +506,25 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application: Luke  Chang (S368GH6KF7)";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				HEADER_SEARCH_PATHS = (
-				);
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = GigEVirtualCameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-				);
+				LIBRARY_SEARCH_PATHS = "";
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera.Extension;
 				PRODUCT_BUNDLE_PACKAGE_TYPE = SYSX;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
@@ -529,21 +534,25 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				HEADER_SEARCH_PATHS = (
-				);
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = GigEVirtualCameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-				);
+				LIBRARY_SEARCH_PATHS = "";
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera.Extension;
 				PRODUCT_BUNDLE_PACKAGE_TYPE = SYSX;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "GigE Camera Extension Dev";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
@@ -554,8 +563,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GigECameraApp/GigECamera.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application: Luke  Chang (S368GH6KF7)";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = GigECameraApp/Info.plist;
 				INFOPLIST_KEY_NSSystemExtensionInstallationPrompt = "GigE Virtual Camera needs to install a system extension to provide virtual camera functionality.";
@@ -566,6 +579,8 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.lukechang.GigEVirtualCamera;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "GigECameraApp/GigEVirtualCamera-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

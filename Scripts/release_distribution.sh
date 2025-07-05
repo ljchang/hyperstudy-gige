@@ -90,10 +90,24 @@ fi
 
 # Re-sign the main app to include the properly signed extension
 print_status "Re-signing main app with Developer ID..."
-codesign --force --deep --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
-    --options runtime \
-    --timestamp \
-    "$APP_PATH"
+# Find the correct entitlements file
+APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera.entitlements"
+if [ ! -f "$APP_ENTITLEMENTS" ]; then
+    APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Release.entitlements"
+fi
+if [ -f "$APP_ENTITLEMENTS" ]; then
+    codesign --force --deep --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        --entitlements "$APP_ENTITLEMENTS" \
+        --options runtime \
+        --timestamp \
+        "$APP_PATH"
+else
+    print_warning "No entitlements file found, signing without entitlements"
+    codesign --force --deep --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        --options runtime \
+        --timestamp \
+        "$APP_PATH"
+fi
 
 # Verify signing
 if codesign --verify --deep --strict "$APP_PATH" 2>&1; then

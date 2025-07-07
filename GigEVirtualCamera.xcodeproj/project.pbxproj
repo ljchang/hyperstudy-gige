@@ -511,6 +511,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = S368GH6KF7;
+				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = GigEVirtualCameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -538,6 +539,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = S368GH6KF7;
+				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = GigEVirtualCameraExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -680,7 +682,7 @@
 				89F7C581CDA2A86F1F7B0CFA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 		A272E0E793C35ABBD6C3B27C /* Build configuration list for PBXNativeTarget "GigEVirtualCamera" */ = {
 			isa = XCConfigurationList;
@@ -689,7 +691,7 @@
 				DC2587FDE26FE4BDEAF2D245 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 		D6222442777D799D0C637853 /* Build configuration list for PBXProject "GigEVirtualCamera" */ = {
 			isa = XCConfigurationList;
@@ -698,7 +700,7 @@
 				51A537EFED3F74CCF1C1F886 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

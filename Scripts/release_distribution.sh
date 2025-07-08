@@ -53,10 +53,14 @@ cd "$PROJECT_ROOT"
 rm -f .distribution_build
 touch .distribution_build
 
-# Build with Release configuration
+# Build with Release configuration for Any Mac
+# Build without any code signing to avoid provisioning profile issues
 xcodebuild -project GigEVirtualCamera.xcodeproj \
     -scheme GigEVirtualCamera \
     -configuration Release \
+    -destination "generic/platform=macOS" \
+    CODE_SIGNING_ALLOWED="NO" \
+    CODE_SIGNING_REQUIRED="NO" \
     clean build
 
 # Clean up marker file
@@ -74,15 +78,43 @@ print_success "App built and installed to $APP_PATH"
 # Step 2: Fix Developer ID signing for system extension
 print_status "Step 2: Fixing Developer ID signing for distribution..."
 
-# Sign the system extension with Developer ID
+# First, remove any embedded provisioning profiles (not needed for Developer ID)
+print_status "Removing embedded provisioning profiles..."
+find "$APP_PATH" -name "*.provisionprofile" -o -name "embedded.provisionprofile" | while read profile; do
+    rm -f "$profile"
+    print_success "Removed: $profile"
+done
+
+# First, sign all Aravis libraries
+print_status "Signing Aravis libraries..."
+ARAVIS_DIR="$APP_PATH/Contents/Frameworks"
+if [ -d "$ARAVIS_DIR" ]; then
+    find "$ARAVIS_DIR" -name "*.dylib" | while read lib; do
+        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+            --options runtime \
+            --timestamp \
+            "$lib"
+    done
+    print_success "Aravis libraries signed"
+fi
+
+# Sign the system extension with Developer ID and its entitlements
 EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+EXTENSION_ENTITLEMENTS="$PROJECT_ROOT/GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements"
+
 if [ -d "$EXTENSION_PATH" ]; then
-    print_status "Signing system extension with Developer ID..."
-    codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
-        --options runtime \
-        --timestamp \
-        "$EXTENSION_PATH"
-    print_success "Extension signed"
+    print_status "Signing system extension with Developer ID and entitlements..."
+    if [ -f "$EXTENSION_ENTITLEMENTS" ]; then
+        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+            --entitlements "$EXTENSION_ENTITLEMENTS" \
+            --options runtime \
+            --timestamp \
+            "$EXTENSION_PATH"
+    else
+        print_error "Extension entitlements file not found: $EXTENSION_ENTITLEMENTS"
+        exit 1
+    fi
+    print_success "Extension signed with entitlements"
 else
     print_error "System extension not found at expected path"
     exit 1
@@ -90,23 +122,19 @@ fi
 
 # Re-sign the main app to include the properly signed extension
 print_status "Re-signing main app with Developer ID..."
-# Find the correct entitlements file
-APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera.entitlements"
-if [ ! -f "$APP_ENTITLEMENTS" ]; then
-    APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Release.entitlements"
-fi
+# Use distribution entitlements file
+APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Distribution.entitlements"
 if [ -f "$APP_ENTITLEMENTS" ]; then
-    codesign --force --deep --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+    # Sign without --deep flag to preserve the extension's signature
+    codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
         --entitlements "$APP_ENTITLEMENTS" \
         --options runtime \
         --timestamp \
         "$APP_PATH"
+    print_success "App signed with distribution entitlements"
 else
-    print_warning "No entitlements file found, signing without entitlements"
-    codesign --force --deep --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
-        --options runtime \
-        --timestamp \
-        "$APP_PATH"
+    print_error "App distribution entitlements file not found: $APP_ENTITLEMENTS"
+    exit 1
 fi
 
 # Verify signing
@@ -160,12 +188,22 @@ print_success "DMG created at $DMG_FILE"
 print_status "Step 5: Notarizing the DMG..."
 
 # Submit for notarization
-if xcrun notarytool submit "$DMG_FILE" \
+print_status "Submitting DMG for notarization (this may take 5-15 minutes)..."
+NOTARIZE_OUTPUT=$(xcrun notarytool submit "$DMG_FILE" \
     --keychain-profile "GigE-Notarization" \
-    --wait; then
-    print_success "DMG notarization submitted successfully"
+    --wait 2>&1)
+
+if echo "$NOTARIZE_OUTPUT" | grep -q "status: Accepted"; then
+    print_success "DMG notarization accepted"
+    
+    # Extract submission ID for reference
+    SUBMISSION_ID=$(echo "$NOTARIZE_OUTPUT" | grep -E "^\s*id:" | head -1 | awk '{print $2}')
+    if [ -n "$SUBMISSION_ID" ]; then
+        print_status "Submission ID: $SUBMISSION_ID"
+    fi
     
     # Staple the ticket
+    print_status "Stapling notarization ticket to DMG..."
     if xcrun stapler staple "$DMG_FILE"; then
         print_success "Notarization ticket stapled to DMG"
     else
@@ -174,6 +212,7 @@ if xcrun notarytool submit "$DMG_FILE" \
     fi
 else
     print_error "DMG notarization failed"
+    echo "$NOTARIZE_OUTPUT"
     exit 1
 fi
 

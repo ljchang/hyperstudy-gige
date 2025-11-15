@@ -11,6 +11,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: macos-14  # Apple Silicon runner

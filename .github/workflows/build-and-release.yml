@@ -120,6 +120,46 @@ jobs:
 
           echo "Build completed successfully"
 
+      - name: Sign bundled libraries
+        env:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
+
+          echo "Signing bundled libraries..."
+
+          # Sign all dylibs in the Frameworks folder
+          if [ -d "$APP_PATH/Contents/Frameworks" ]; then
+            find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
+              echo "Signing: $(basename "$lib")"
+              codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime "$lib" || true
+            done
+          fi
+
+          # Re-sign the extension after library signing
+          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
+          if [ -d "$EXTENSION_PATH" ]; then
+            for ext in "$EXTENSION_PATH"/*.systemextension; do
+              if [ -d "$ext" ]; then
+                echo "Re-signing extension: $(basename "$ext")"
+                codesign --force --sign "$CODE_SIGN_IDENTITY" \
+                  --timestamp --options runtime \
+                  --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements \
+                  "$ext"
+              fi
+            done
+          fi
+
+          # Re-sign the main app
+          echo "Re-signing main app..."
+          codesign --force --sign "$CODE_SIGN_IDENTITY" \
+            --timestamp --options runtime \
+            --entitlements GigECameraApp/GigECamera-Release.entitlements \
+            --deep \
+            "$APP_PATH"
+
+          echo "Signing completed"
+
       - name: Verify code signing
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"

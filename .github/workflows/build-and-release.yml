@@ -97,6 +97,15 @@ jobs:
         run: |
           echo "Building GigE Virtual Camera..."
 
+          # Get Aravis paths dynamically using symlinked paths
+          ARAVIS_PREFIX="/opt/homebrew/opt/aravis"
+          GLIB_PREFIX="/opt/homebrew/opt/glib"
+          GETTEXT_PREFIX="/opt/homebrew/opt/gettext"
+          PCRE2_PREFIX="/opt/homebrew/opt/pcre2"
+
+          echo "Using Aravis from: $ARAVIS_PREFIX"
+
+          # Build with dynamic header paths
           xcodebuild -project GigEVirtualCamera.xcodeproj \
             -scheme GigEVirtualCamera \
             -configuration Release \
@@ -105,14 +114,8 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE="Manual" \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            clean build | xcpretty || xcodebuild -project GigEVirtualCamera.xcodeproj \
-            -scheme GigEVirtualCamera \
-            -configuration Release \
-            -derivedDataPath build/DerivedData \
-            -destination "generic/platform=macOS" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE="Manual" \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
+            HEADER_SEARCH_PATHS="/opt/homebrew/include ${ARAVIS_PREFIX}/include/aravis-0.8 ${GLIB_PREFIX}/include ${GLIB_PREFIX}/include/glib-2.0 ${GLIB_PREFIX}/lib/glib-2.0/include ${GETTEXT_PREFIX}/include ${PCRE2_PREFIX}/include /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/ffi" \
+            LIBRARY_SEARCH_PATHS="/opt/homebrew/lib ${ARAVIS_PREFIX}/lib" \
             clean build
 
           echo "Build completed successfully"

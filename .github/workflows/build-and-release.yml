@@ -97,7 +97,6 @@ jobs:
         run: |
           echo "Building GigE Virtual Camera..."
 
-          cd macos
           xcodebuild -project GigEVirtualCamera.xcodeproj \
             -scheme GigEVirtualCamera \
             -configuration Release \
@@ -120,7 +119,7 @@ jobs:
 
       - name: Verify code signing
         run: |
-          APP_PATH="macos/build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
+          APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
 
           echo "Verifying app signature..."
           codesign --verify --verbose --deep --strict "$APP_PATH"
@@ -140,7 +139,7 @@ jobs:
           NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
           NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          APP_PATH="macos/build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
+          APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
 
           echo "Creating ZIP for notarization..."
           ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/GigEVirtualCamera.zip"
@@ -166,8 +165,8 @@ jobs:
         env:
           CODE_SIGN_IDENTITY: "Developer ID Application"
         run: |
-          APP_PATH="macos/build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
-          OUTPUT_DIR="macos/build/distribution"
+          APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
+          OUTPUT_DIR="build/distribution"
           mkdir -p "$OUTPUT_DIR"
 
           echo "Creating DMG..."
@@ -186,7 +185,7 @@ jobs:
           NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          DMG_PATH="macos/build/distribution/GigEVirtualCamera-${VERSION}.dmg"
+          DMG_PATH="build/distribution/GigEVirtualCamera-${VERSION}.dmg"
 
           echo "Submitting DMG for notarization..."
           xcrun notarytool submit "$DMG_PATH" \
@@ -242,7 +241,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: macos/build/distribution/GigEVirtualCamera-${{ steps.version.outputs.VERSION }}.dmg
+          files: build/distribution/GigEVirtualCamera-${{ steps.version.outputs.VERSION }}.dmg
           body_path: ${{ runner.temp }}/release_notes.md
           draft: false
           prerelease: false

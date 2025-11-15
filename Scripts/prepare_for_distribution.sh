@@ -15,8 +15,8 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
-IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Luke  Chang (S368GH6KF7)}"
-TEAM_ID="S368GH6KF7"
+IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application}"
+TEAM_ID="${APPLE_TEAM_ID:-S368GH6KF7}"
 
 echo "Preparing app for distribution: $APP_PATH"
 

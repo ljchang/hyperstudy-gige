@@ -48,8 +48,8 @@ xcodebuild -project GigEVirtualCamera.xcodeproj \
     -scheme GigEVirtualCamera \
     -configuration Release \
     -derivedDataPath "$BUILD_DIR/DerivedData" \
-    CODE_SIGN_IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)" \
-    DEVELOPMENT_TEAM="S368GH6KF7" \
+    CODE_SIGN_IDENTITY="Developer ID Application" \
+    DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-S368GH6KF7}" \
     CODE_SIGN_STYLE="Automatic" \
     ENABLE_HARDENED_RUNTIME="YES" \
     clean build
@@ -84,14 +84,14 @@ EXTENSION_ENTITLEMENTS="$PROJECT_ROOT/GigEVirtualCameraExtension/GigEVirtualCame
 if [ -d "$EXTENSION_PATH" ]; then
     # First sign any embedded frameworks/libraries in the extension
     find "$EXTENSION_PATH" -name "*.dylib" -o -name "*.framework" | while read lib; do
-        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        codesign --force --sign "Developer ID Application" \
             --options runtime \
             --timestamp \
             "$lib"
     done
     
     # Then sign the extension itself
-    codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+    codesign --force --sign "Developer ID Application" \
         --entitlements "$EXTENSION_ENTITLEMENTS" \
         --options runtime \
         --timestamp \
@@ -110,7 +110,7 @@ APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Distribution.entitlemen
 ARAVIS_DIR="$TEMP_APP/Contents/Frameworks"
 if [ -d "$ARAVIS_DIR" ]; then
     find "$ARAVIS_DIR" -name "*.dylib" | while read lib; do
-        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        codesign --force --sign "Developer ID Application" \
             --options runtime \
             --timestamp \
             "$lib"
@@ -118,7 +118,7 @@ if [ -d "$ARAVIS_DIR" ]; then
 fi
 
 # Sign the app (without --deep to preserve extension signature)
-codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+codesign --force --sign "Developer ID Application" \
     --entitlements "$APP_ENTITLEMENTS" \
     --options runtime \
     --timestamp \

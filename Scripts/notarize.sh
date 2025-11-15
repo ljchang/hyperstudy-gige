@@ -64,7 +64,7 @@ check_requirements() {
         echo ""
         echo "  xcrun notarytool store-credentials \"$PROFILE_NAME\" \\"
         echo "      --apple-id \"your-apple-id@example.com\" \\"
-        echo "      --team-id \"S368GH6KF7\" \\"
+        echo "      --team-id \"YOUR_TEAM_ID_HERE\" \\"
         echo "      --password \"your-app-specific-password\""
         echo ""
         echo "To create an app-specific password:"
@@ -260,7 +260,8 @@ create_dmg() {
                       "$OUTPUT_DIR/$DMG_NAME"
         
         # Sign the DMG
-        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
+        codesign --force --sign "$IDENTITY" \
                  "$OUTPUT_DIR/$DMG_NAME"
         
         # Notarize the DMG too

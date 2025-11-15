@@ -1,5 +1,10 @@
 # GigE Virtual Camera for macOS
 
+[![Build and Release](https://github.com/ljchang/hyperstudy-gige/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/ljchang/hyperstudy-gige/actions/workflows/build-and-release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![macOS](https://img.shields.io/badge/macOS-12.3+-blue.svg)](https://www.apple.com/macos/)
+[![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://support.apple.com/en-us/HT211814)
+
 A native macOS application that creates virtual cameras from GigE Vision industrial cameras, making them available to any macOS application (Zoom, Teams, OBS, QuickTime, Photo Booth, etc.).
 
 ## Features
@@ -20,60 +25,54 @@ A native macOS application that creates virtual cameras from GigE Vision industr
 
 ## Installation
 
-### For End Users (Coming Soon)
-1. Download the latest release DMG
-2. Drag GigEVirtualCamera.app to Applications
-3. Launch and approve System Extension installation
-4. Grant camera permissions when prompted
+### Download
 
-### For Developers (Current)
-**Note**: The app requires Apple's approval for the System Extension entitlement. Until approved, development requires disabling SIP on test machines.
+**[Download the latest release →](https://github.com/ljchang/hyperstudy-gige/releases/latest)**
+
+### Installation Steps
+
+1. **Download** the latest `GigEVirtualCamera-vX.X.X.dmg` from [Releases](https://github.com/ljchang/hyperstudy-gige/releases)
+2. **Open** the DMG file
+3. **Drag** GigEVirtualCamera.app to your Applications folder
+4. **Launch** the app from Applications
+5. **Approve** System Extension installation when prompted
+6. **Allow** camera permissions in System Settings → Privacy & Security
+
+**Note**: The app is signed and notarized with Apple Developer ID for secure installation.
+
+### For Developers
+See [BUILDING.md](BUILDING.md) for instructions on building from source.
 
 ## Building from Source
 
-### Prerequisites
-
-- Xcode 15.0 or later
-- macOS 14.0 SDK or later  
-- [Homebrew](https://brew.sh) (for Aravis dependency)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
-- Apple Developer account with Developer ID certificate
-
-### Build Steps
+### Quick Start
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/hyperstudy-gige.git
+git clone https://github.com/ljchang/hyperstudy-gige.git
 cd hyperstudy-gige
 
 # Install dependencies
 brew install aravis
-brew install xcodegen
 
-# Build the app
-./Scripts/build_release.sh
+# Open in Xcode
+open macos/GigEVirtualCamera.xcodeproj
 
-# For development builds (uses Apple Development signing)
-./Scripts/build_dev.sh
+# Build and run (Cmd+R)
 ```
 
-### Development Setup
+For detailed build instructions, code signing, and distribution, see **[BUILDING.md](BUILDING.md)**.
 
-1. **Disable SIP for testing** (development only):
-   ```bash
-   # Boot into Recovery Mode
-   # Open Terminal and run:
-   csrutil enable --without sysext
-   # Restart
-   ```
+### CI/CD
 
-2. **Open in Xcode**:
-   ```bash
-   xcodegen generate
-   open GigEVirtualCamera.xcodeproj
-   ```
+This project uses GitHub Actions for automated builds and releases:
 
-3. **Select your development team** in Xcode project settings
+- **Automatic Releases**: Push a version tag (e.g., `v1.0.0`) to automatically build, sign, notarize, and release
+- **macOS Runners**: Built on Apple Silicon (macos-14)
+- **Secure**: Uses GitHub Secrets for certificates and credentials
+- **Workflow**: See [`.github/workflows/build-and-release.yml`](.github/workflows/build-and-release.yml)
+
+For maintainers setting up CI/CD, see **[SECRETS_SETUP.md](SECRETS_SETUP.md)**.
 
 ## Usage
 
@@ -166,12 +165,32 @@ The project implements a macOS System Extension architecture:
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! We appreciate bug reports, feature requests, documentation improvements, and code contributions.
+
+### How to Contribute
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Submit a pull request
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to your branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup
+- Coding standards
+- Testing guidelines
+- Pull request process
+
+### Areas for Contribution
+
+- Camera format support (more pixel formats)
+- Performance optimization
+- Testing infrastructure
+- Documentation improvements
+- Bug fixes
+
+See [open issues](https://github.com/ljchang/hyperstudy-gige/issues) for specific tasks.
 
 ## License
 

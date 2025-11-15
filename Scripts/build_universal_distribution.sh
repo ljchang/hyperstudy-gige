@@ -83,7 +83,7 @@ rm -f "$OUTPUT_DIR/GigEVirtualCamera.dmg"
 
 # Step 7: Sign the DMG
 print_status "Step 6: Signing the DMG..."
-codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+codesign --force --sign "Developer ID Application" \
     "$OUTPUT_DIR/GigEVirtualCamera.dmg"
 print_success "DMG signed"
 

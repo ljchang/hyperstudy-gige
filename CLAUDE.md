@@ -167,3 +167,109 @@ When no real GigE camera is available:
 - Prefer Swift native types over Foundation when possible
 - Use async/await for asynchronous operations
 - Add documentation comments for public APIs
+
+## Environment Configuration
+
+### Environment Variables
+
+This project uses environment variables for code signing and distribution configuration:
+
+**Local Development (.env file)**:
+```bash
+# Create .env from template
+cp .env.example .env
+
+# Edit .env with your values
+APPLE_TEAM_ID=YOUR_10_CHAR_TEAM_ID
+CODE_SIGN_IDENTITY=Developer ID Application
+NOTARIZATION_APPLE_ID=your@email.com
+NOTARIZATION_PASSWORD=xxxx-xxxx-xxxx-xxxx
+```
+
+**Using environment variables in builds**:
+```bash
+# Source .env file
+source .env
+
+# Build with environment variables
+export APPLE_TEAM_ID=YOUR_TEAM_ID
+xcodebuild -project GigEVirtualCamera.xcodeproj \
+  -scheme GigEVirtualCamera \
+  -configuration Release \
+  DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+```
+
+**Default values**: If environment variables are not set, the project uses defaults from the original configuration for backward compatibility.
+
+### GitHub Actions CI/CD
+
+The project includes automated builds and releases via GitHub Actions.
+
+**Workflow file**: `.github/workflows/build-and-release.yml`
+
+**Trigger**: Push a version tag to automatically build, sign, notarize, and release:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**Required GitHub Secrets** (for maintainers):
+- `MACOS_CERTIFICATE_BASE64` - Developer ID certificate (p12, base64 encoded)
+- `MACOS_CERTIFICATE_PASSWORD` - Password for the certificate
+- `MACOS_PROVISIONING_PROFILE_APP_BASE64` - App provisioning profile (base64)
+- `MACOS_PROVISIONING_PROFILE_EXT_BASE64` - Extension provisioning profile (base64)
+- `APPLE_TEAM_ID` - Apple Developer Team ID
+- `NOTARIZATION_APPLE_ID` - Apple ID for notarization
+- `NOTARIZATION_PASSWORD` - App-specific password
+
+See [SECRETS_SETUP.md](SECRETS_SETUP.md) for detailed setup instructions.
+
+**Build process**:
+1. Install dependencies (Aravis via Homebrew)
+2. Import code signing certificates from secrets
+3. Build Release configuration
+4. Sign app and extension
+5. Notarize with Apple
+6. Create DMG
+7. Create GitHub Release with DMG attachment
+
+**Debugging workflow failures**:
+```bash
+# View workflow runs
+# GitHub → Actions tab
+
+# Check logs for:
+# - Certificate import errors
+# - Build failures
+# - Notarization issues
+# - DMG creation problems
+```
+
+### Code Signing Notes
+
+**For Local Development**:
+- Use "Apple Development" certificates
+- Xcode handles signing automatically for Debug builds
+- No manual configuration needed for basic testing
+
+**For Distribution**:
+- Requires "Developer ID Application" certificate
+- Requires provisioning profiles for app and extension
+- Build scripts check for `APPLE_TEAM_ID` environment variable
+- Notarization requires app-specific password (not Apple ID password!)
+
+**Important**: Never commit certificates, provisioning profiles, or passwords to git. Use .env file (gitignored) or GitHub Secrets.
+
+### Making the Repository Public
+
+Before making this repository public:
+
+1. ✅ All secrets removed from code (completed)
+2. ✅ Environment variables configured (completed)
+3. ✅ GitHub Actions workflow created (completed)
+4. ✅ Documentation updated (completed)
+5. ⚠️ Update GitHub usernames in README.md badges
+6. ⚠️ Configure GitHub Secrets (see SECRETS_SETUP.md)
+7. ⚠️ Test workflow with a version tag
+
+See [GOING_PUBLIC_PLAN.md](GOING_PUBLIC_PLAN.md) for the complete checklist.

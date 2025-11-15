@@ -76,7 +76,7 @@ if [[ "$team_response" != "y" ]]; then
     echo "Enter your Team ID:"
     read -r TEAM_ID
 else
-    TEAM_ID="S368GH6KF7"
+    TEAM_ID="${APPLE_TEAM_ID:-S368GH6KF7}"
 fi
 
 # Store credentials

@@ -52,3 +52,27 @@ Carthage/Build/
 build/
 DerivedData/
 GigEVirtualCamera.app/
+
+# Certificates and Code Signing
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
+# Environment and Secrets
+.env
+.env.*
+!.env.example
+secrets/
+secrets.*
+*.secret
+
+# Distribution markers
+.distribution_build
+
+# Local credentials
+notarization.keychain
+
+# Dropbox references (if accidentally added)
+*Dropbox*

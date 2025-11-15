@@ -12,9 +12,9 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_ROOT/build"
 OUTPUT_DIR="$PROJECT_ROOT/build/distribution"
 
-# Signing configuration
-TEAM_ID="S368GH6KF7"
-SIGNING_IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)"
+# Signing configuration (can be overridden via environment variables)
+TEAM_ID="${APPLE_TEAM_ID:-S368GH6KF7}"
+SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 
 # Colors
 RED='\033[0;31m'
@@ -93,9 +93,8 @@ if [ ! -f "$APP_PATH/Contents/embedded.provisionprofile" ]; then
     
     # Look for the Developer ID provisioning profile for the app
     PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-    DROPBOX_PROFILES="/Users/lukechang/Dartmouth College Dropbox/Luke Chang/HyperStudy/GigE/ProvisioningProfile"
     APP_PROFILE=""
-    
+
     # Find profile by searching for bundle ID in the profile content
     for profile in "$PROFILES_DIR"/*.provisionprofile; do
         if [ -f "$profile" ]; then

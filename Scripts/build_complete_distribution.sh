@@ -18,8 +18,8 @@ OUTPUT_DIR="$PROJECT_ROOT/build/distribution"
 TEMP_DIR="$PROJECT_ROOT/build/temp"
 
 # Team and signing configuration
-TEAM_ID="S368GH6KF7"
-SIGNING_IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)"
+TEAM_ID="${APPLE_TEAM_ID:-S368GH6KF7}"
+SIGNING_IDENTITY="Developer ID Application"
 
 # Colors
 RED='\033[0;31m'
@@ -445,7 +445,7 @@ GigE Virtual Camera Distribution Build Summary
 
 Version: $APP_VERSION (Build $BUILD_NUMBER)
 Date: $(date)
-Team: Luke Chang ($TEAM_ID)
+Team ID: $TEAM_ID
 
 Files:
 - Application: /Applications/GigEVirtualCamera.app

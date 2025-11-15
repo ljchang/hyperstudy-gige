@@ -13,7 +13,7 @@ OUTPUT_DIR="$PROJECT_ROOT/build/distribution"
 DMG_NAME="GigEVirtualCamera.dmg"
 VOLUME_NAME="GigEVirtualCamera"
 BACKGROUND_COLOR="#2c3e50"
-IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)"
+IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 
 # Colors for output
 RED='\033[0;31m'

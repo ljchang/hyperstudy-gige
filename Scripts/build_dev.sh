@@ -34,7 +34,7 @@ echo -e "\n4. Debug app built at: $DEBUG_APP"
 
 # 5. Sign with Apple Development certificate for local testing
 echo -e "\n5. Signing for development..."
-CODESIGN_IDENTITY="Apple Development: Luke  Chang (6696TSCXZY)" \
+CODESIGN_IDENTITY="Apple Development" \
     /Users/lukechang/Github/hyperstudy-gige/Scripts/prepare_for_distribution.sh "$DEBUG_APP"
 
 # 6. Copy to Applications

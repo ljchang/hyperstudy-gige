@@ -90,7 +90,7 @@ print_status "Signing Aravis libraries..."
 ARAVIS_DIR="$APP_PATH/Contents/Frameworks"
 if [ -d "$ARAVIS_DIR" ]; then
     find "$ARAVIS_DIR" -name "*.dylib" | while read lib; do
-        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        codesign --force --sign "Developer ID Application" \
             --options runtime \
             --timestamp \
             "$lib"
@@ -105,7 +105,7 @@ EXTENSION_ENTITLEMENTS="$PROJECT_ROOT/GigEVirtualCameraExtension/GigEVirtualCame
 if [ -d "$EXTENSION_PATH" ]; then
     print_status "Signing system extension with Developer ID and entitlements..."
     if [ -f "$EXTENSION_ENTITLEMENTS" ]; then
-        codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+        codesign --force --sign "Developer ID Application" \
             --entitlements "$EXTENSION_ENTITLEMENTS" \
             --options runtime \
             --timestamp \
@@ -126,7 +126,7 @@ print_status "Re-signing main app with Developer ID..."
 APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Distribution.entitlements"
 if [ -f "$APP_ENTITLEMENTS" ]; then
     # Sign without --deep flag to preserve the extension's signature
-    codesign --force --sign "Developer ID Application: Luke  Chang (S368GH6KF7)" \
+    codesign --force --sign "Developer ID Application" \
         --entitlements "$APP_ENTITLEMENTS" \
         --options runtime \
         --timestamp \

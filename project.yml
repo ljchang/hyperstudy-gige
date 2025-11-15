@@ -8,6 +8,8 @@ options:
   generateEmptyDirectories: true
   
 settings:
+  # Team ID can be overridden via environment variable APPLE_TEAM_ID
+  # Default is maintained for convenience, but CI/CD will use secrets
   DEVELOPMENT_TEAM: S368GH6KF7
   # Build for Apple Silicon only (Aravis is arm64 only)
   ARCHS: arm64
@@ -75,7 +77,8 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: ""
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: S368GH6KF7
-        CODE_SIGN_IDENTITY: "Developer ID Application: Luke  Chang (S368GH6KF7)"
+        # Generic identity - Xcode will select the right cert based on Team ID
+        CODE_SIGN_IDENTITY: "Developer ID Application"
     preBuildScripts:
       - script: |
           if [ -d "${SRCROOT}/Scripts" ]; then
@@ -231,7 +234,8 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: ""
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: S368GH6KF7
-        CODE_SIGN_IDENTITY: "Developer ID Application: Luke  Chang (S368GH6KF7)"
+        # Generic identity - Xcode will select the right cert based on Team ID
+        CODE_SIGN_IDENTITY: "Developer ID Application"
     postBuildScripts:
       - script: |
           # The extension folder must match the bundle ID for sysextd to find it

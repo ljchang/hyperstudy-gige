@@ -4,8 +4,12 @@
 
 set -e
 
-APP_PATH="${1:-/Users/lukechang/Github/hyperstudy-gige/build/Release/GigEVirtualCamera.app}"
-IDENTITY="Developer ID Application: Luke  Chang (S368GH6KF7)"
+# Get script directory for relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+APP_PATH="${1:-$PROJECT_ROOT/build/Release/GigEVirtualCamera.app}"
+IDENTITY="${CODE_SIGN_IDENTITY:-Developer ID Application}"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "Error: App not found at $APP_PATH"

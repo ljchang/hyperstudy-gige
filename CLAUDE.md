@@ -260,16 +260,165 @@ See [SECRETS_SETUP.md](SECRETS_SETUP.md) for detailed setup instructions.
 
 **Important**: Never commit certificates, provisioning profiles, or passwords to git. Use .env file (gitignored) or GitHub Secrets.
 
-### Making the Repository Public
+## Creating Releases
 
-Before making this repository public:
+### Automated Release Process (Recommended)
 
-1. ✅ All secrets removed from code (completed)
-2. ✅ Environment variables configured (completed)
-3. ✅ GitHub Actions workflow created (completed)
-4. ✅ Documentation updated (completed)
-5. ⚠️ Update GitHub usernames in README.md badges
-6. ⚠️ Configure GitHub Secrets (see SECRETS_SETUP.md)
-7. ⚠️ Test workflow with a version tag
+The project uses GitHub Actions to automatically build, sign, notarize, and publish releases.
 
-See [GOING_PUBLIC_PLAN.md](GOING_PUBLIC_PLAN.md) for the complete checklist.
+**Step 1: Prepare for Release**
+
+```bash
+# Ensure you're on main branch with latest changes
+git checkout main
+git pull origin main
+
+# Verify build is working locally (optional)
+xcodebuild -project GigEVirtualCamera.xcodeproj \
+  -scheme GigEVirtualCamera \
+  -configuration Release \
+  clean build
+```
+
+**Step 2: Create and Push Version Tag**
+
+```bash
+# Create a version tag (semantic versioning: vMAJOR.MINOR.PATCH)
+git tag v1.0.0
+
+# Push the tag to GitHub
+git push origin v1.0.0
+```
+
+**Step 3: Monitor the Build**
+
+```bash
+# Watch the GitHub Actions workflow
+gh run list --limit 1
+
+# Or view in browser
+open https://github.com/ljchang/hyperstudy-gige/actions
+```
+
+**Step 4: Verify the Release**
+
+The workflow automatically:
+1. ✅ Builds the Release configuration
+2. ✅ Signs app and extension with Developer ID
+3. ✅ Notarizes app with Apple (~10 minutes)
+4. ✅ Creates DMG installer
+5. ✅ Notarizes DMG with Apple (~5 minutes)
+6. ✅ Creates GitHub Release with DMG attached
+7. ✅ Generates release notes from commits
+
+**View the release:**
+```bash
+# List releases
+gh release list
+
+# View specific release
+gh release view v1.0.0
+
+# Or in browser
+open https://github.com/ljchang/hyperstudy-gige/releases
+```
+
+**Total time:** ~15-20 minutes from tag push to published release
+
+### Manual Release Process (Advanced)
+
+If you need to build a release manually:
+
+```bash
+# 1. Set up environment variables
+source .env  # Contains APPLE_TEAM_ID, CODE_SIGN_IDENTITY, etc.
+
+# 2. Run the complete distribution script
+./Scripts/build_and_distribute.sh
+
+# This will:
+# - Build Release configuration
+# - Sign with Developer ID
+# - Notarize with Apple
+# - Create DMG
+# - Notarize DMG
+
+# 3. Find the DMG at:
+ls -lh build/distribution/*.dmg
+
+# 4. Manually create GitHub release
+gh release create v1.0.0 \
+  build/distribution/GigEVirtualCamera-v1.0.0.dmg \
+  --title "GigE Virtual Camera v1.0.0" \
+  --notes "Release notes here"
+```
+
+### Version Numbering
+
+Follow [Semantic Versioning](https://semver.org/):
+
+- **v1.0.0** - Major release (breaking changes, new architecture)
+- **v1.1.0** - Minor release (new features, backward compatible)
+- **v1.0.1** - Patch release (bug fixes, small improvements)
+
+**Examples:**
+- `v1.0.0` - First stable release
+- `v1.0.1` - Bug fix for v1.0.0
+- `v1.1.0` - Added new camera format support
+- `v2.0.0` - Complete UI redesign (breaking change)
+
+**Test releases:**
+- Use `-test` suffix for testing: `v0.9.0-test`
+- These can be deleted after verification
+- Don't use for production releases
+
+### Troubleshooting Releases
+
+**Build fails during notarization:**
+```bash
+# Check notarization status
+xcrun notarytool history \
+  --apple-id "your@email.com" \
+  --password "xxxx-xxxx-xxxx-xxxx" \
+  --team-id "YOUR_TEAM_ID"
+
+# View specific notarization log
+xcrun notarytool log SUBMISSION_ID \
+  --apple-id "your@email.com" \
+  --password "xxxx-xxxx-xxxx-xxxx" \
+  --team-id "YOUR_TEAM_ID"
+```
+
+**GitHub Actions fails:**
+```bash
+# View failed workflow logs
+gh run view --log-failed
+
+# Re-run workflow
+gh run rerun <run-id>
+```
+
+**DMG not appearing in release:**
+- Check GitHub Actions logs for upload errors
+- Verify `permissions: contents: write` in workflow
+- Ensure DMG was created: check "Create DMG" step logs
+
+### Release Checklist
+
+Before creating a production release:
+
+- [ ] All tests passing locally
+- [ ] Version number updated (if hardcoded anywhere)
+- [ ] CHANGELOG.md updated with changes
+- [ ] README.md reflects latest features
+- [ ] No debug code or TODOs in critical paths
+- [ ] Tested with both test camera and real GigE camera
+- [ ] Verified virtual camera works in QuickTime/Zoom
+- [ ] All GitHub secrets are configured correctly
+
+**After release:**
+- [ ] Download and test the DMG
+- [ ] Verify installation on a clean Mac (if possible)
+- [ ] Test system extension approval process
+- [ ] Update documentation if needed
+- [ ] Announce release (if applicable)

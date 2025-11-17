@@ -123,70 +123,122 @@ jobs:
 
           echo "Build completed successfully"
 
-      - name: Sign bundled libraries
+      - name: Embed provisioning profiles and re-sign
         env:
           CODE_SIGN_IDENTITY: "Developer ID Application"
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
 
-          echo "Signing bundled libraries..."
+          echo "Step 1: Embedding provisioning profiles..."
 
-          # Sign all dylibs in the Frameworks folder
+          # Embed app provisioning profile
+          echo "Looking for app provisioning profile..."
+          for profile in "$PROFILES_DIR"/*.provisionprofile; do
+            if [ -f "$profile" ]; then
+              # Check if this is the app profile (not extension)
+              if security cms -D -i "$profile" 2>/dev/null | grep -q "com.lukechang.GigEVirtualCamera" && \
+                 ! security cms -D -i "$profile" 2>/dev/null | grep -q "com.lukechang.GigEVirtualCamera.Extension"; then
+                cp "$profile" "$APP_PATH/Contents/embedded.provisionprofile"
+                echo "✅ Embedded app provisioning profile"
+                break
+              fi
+            fi
+          done
+
+          # Verify app profile was embedded
+          if [ ! -f "$APP_PATH/Contents/embedded.provisionprofile" ]; then
+            echo "❌ ERROR: App provisioning profile not found!"
+            exit 1
+          fi
+
+          # Verify extension has its profile
+          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
+          EXT_FULL_PATH="$EXTENSION_PATH/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+          if [ ! -f "$EXT_FULL_PATH/Contents/embedded.provisionprofile" ]; then
+            echo "❌ ERROR: Extension provisioning profile not found!"
+            exit 1
+          fi
+          echo "✅ Extension provisioning profile verified"
+
+          echo "Step 2: Cleaning hidden files..."
+          find "$APP_PATH" -name ".DS_Store" -delete 2>/dev/null || true
+          find "$APP_PATH" -name "._*" -delete 2>/dev/null || true
+
+          echo "Step 3: Signing bundled libraries..."
           if [ -d "$APP_PATH/Contents/Frameworks" ]; then
             find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
               echo "Signing: $(basename "$lib")"
-              codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime "$lib" || true
+              codesign --force --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime "$lib"
             done
           fi
 
-          # Re-sign the extension after library signing
-          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
-          if [ -d "$EXTENSION_PATH" ]; then
-            for ext in "$EXTENSION_PATH"/*.systemextension; do
-              if [ -d "$ext" ]; then
-                echo "Re-signing extension: $(basename "$ext")"
-                codesign --force --sign "$CODE_SIGN_IDENTITY" \
-                  --timestamp --options runtime \
-                  --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements \
-                  "$ext"
-              fi
-            done
-          fi
+          echo "Step 4: Re-signing extension..."
+          # Remove old signature first
+          codesign --remove-signature "$EXT_FULL_PATH" 2>/dev/null || true
 
-          # Re-sign the main app
-          echo "Re-signing main app..."
+          # Re-sign with entitlements
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
-            --timestamp --options runtime \
+            --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements \
+            --timestamp \
+            --options runtime \
+            "$EXT_FULL_PATH"
+          echo "✅ Extension signed"
+
+          echo "Step 5: Re-signing main app..."
+          # Remove old signature first
+          codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+
+          # Re-sign WITHOUT --deep flag (important!)
+          codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --entitlements GigECameraApp/GigECamera-Distribution.entitlements \
-            --deep \
+            --timestamp \
+            --options runtime \
             "$APP_PATH"
+          echo "✅ App signed"
 
           echo "Signing completed"
 
       - name: Verify code signing
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
-
-          echo "Verifying app signature..."
-          codesign --verify --verbose --deep --strict "$APP_PATH"
+          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
           echo "Verifying extension signature..."
-          EXTENSION_DIR="$APP_PATH/Contents/Library/SystemExtensions"
-          if [ -d "$EXTENSION_DIR" ]; then
-            for ext in "$EXTENSION_DIR"/*.systemextension; do
-              if [ -d "$ext" ]; then
-                echo "Found extension: $(basename "$ext")"
-                codesign --verify --verbose --strict "$ext" || echo "Extension verification failed (may be normal for embedded extensions)"
-              fi
-            done
+          if codesign --verify --verbose --strict "$EXTENSION_PATH" 2>&1; then
+            echo "✅ Extension signature valid"
           else
-            echo "No SystemExtensions directory found (extension may be embedded differently)"
+            echo "❌ Extension signature invalid"
+            exit 1
+          fi
+
+          echo "Verifying app signature (deep check)..."
+          if codesign --verify --deep --strict "$APP_PATH" 2>&1; then
+            echo "✅ App signature valid"
+          else
+            echo "❌ App signature invalid"
+            exit 1
+          fi
+
+          echo "Checking provisioning profiles..."
+          if [ -f "$APP_PATH/Contents/embedded.provisionprofile" ]; then
+            echo "✅ App has embedded provisioning profile"
+          else
+            echo "❌ App missing embedded provisioning profile"
+            exit 1
+          fi
+
+          if [ -f "$EXTENSION_PATH/Contents/embedded.provisionprofile" ]; then
+            echo "✅ Extension has embedded provisioning profile"
+          else
+            echo "❌ Extension missing embedded provisioning profile"
+            exit 1
           fi
 
           echo "Checking signing identity..."
           codesign -dvvv "$APP_PATH"
 
-          echo "Code signing verification completed"
+          echo "✅ Code signing verification completed"
 
       - name: Notarize application
         env:

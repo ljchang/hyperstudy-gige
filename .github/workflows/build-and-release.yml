@@ -154,18 +154,14 @@ jobs:
 
           # Embed extension provisioning profile
           EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
-          EXT_FULL_PATH="$EXTENSION_PATH/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+          EXT_FULL_PATH="$EXTENSION_PATH/GigECameraExtension.systemextension"
 
-          echo "Debugging: Checking extension structure..."
-          ls -la "$EXTENSION_PATH/" || echo "Extension path not found"
-          if [ -d "$EXT_FULL_PATH" ]; then
-            echo "Extension bundle exists"
-            ls -la "$EXT_FULL_PATH/" || true
-            ls -la "$EXT_FULL_PATH/Contents/" || echo "Contents directory doesn't exist"
-          else
-            echo "ERROR: Extension bundle not found at $EXT_FULL_PATH"
+          echo "Verifying extension bundle exists..."
+          if [ ! -d "$EXT_FULL_PATH" ]; then
+            echo "❌ ERROR: Extension bundle not found at $EXT_FULL_PATH"
             exit 1
           fi
+          echo "✅ Extension bundle found"
 
           echo "Looking for extension provisioning profile..."
           EXT_PROFILE=""
@@ -230,7 +226,7 @@ jobs:
       - name: Verify code signing
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
-          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
 
           echo "Verifying extension signature..."
           if codesign --verify --verbose --strict "$EXTENSION_PATH" 2>&1; then

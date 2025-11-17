@@ -147,7 +147,7 @@ jobs:
                 echo "Re-signing extension: $(basename "$ext")"
                 codesign --force --sign "$CODE_SIGN_IDENTITY" \
                   --timestamp --options runtime \
-                  --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements \
+                  --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements \
                   "$ext"
               fi
             done
@@ -157,7 +157,7 @@ jobs:
           echo "Re-signing main app..."
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --timestamp --options runtime \
-            --entitlements GigECameraApp/GigECamera-Release.entitlements \
+            --entitlements GigECameraApp/GigECamera-Distribution.entitlements \
             --deep \
             "$APP_PATH"
 

@@ -156,6 +156,17 @@ jobs:
           EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
           EXT_FULL_PATH="$EXTENSION_PATH/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
+          echo "Debugging: Checking extension structure..."
+          ls -la "$EXTENSION_PATH/" || echo "Extension path not found"
+          if [ -d "$EXT_FULL_PATH" ]; then
+            echo "Extension bundle exists"
+            ls -la "$EXT_FULL_PATH/" || true
+            ls -la "$EXT_FULL_PATH/Contents/" || echo "Contents directory doesn't exist"
+          else
+            echo "ERROR: Extension bundle not found at $EXT_FULL_PATH"
+            exit 1
+          fi
+
           echo "Looking for extension provisioning profile..."
           EXT_PROFILE=""
           for profile in "$PROFILES_DIR"/*.provisionprofile; do
@@ -169,6 +180,8 @@ jobs:
           done
 
           if [ -n "$EXT_PROFILE" ]; then
+            # Create Contents directory if it doesn't exist
+            mkdir -p "$EXT_FULL_PATH/Contents"
             cp "$EXT_PROFILE" "$EXT_FULL_PATH/Contents/embedded.provisionprofile"
             echo "✅ Embedded extension provisioning profile"
           else

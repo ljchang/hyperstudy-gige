@@ -152,14 +152,29 @@ jobs:
             exit 1
           fi
 
-          # Verify extension has its profile
+          # Embed extension provisioning profile
           EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
           EXT_FULL_PATH="$EXTENSION_PATH/com.lukechang.GigEVirtualCamera.Extension.systemextension"
-          if [ ! -f "$EXT_FULL_PATH/Contents/embedded.provisionprofile" ]; then
-            echo "❌ ERROR: Extension provisioning profile not found!"
+
+          echo "Looking for extension provisioning profile..."
+          EXT_PROFILE=""
+          for profile in "$PROFILES_DIR"/*.provisionprofile; do
+            if [ -f "$profile" ]; then
+              # Check if this is the extension profile
+              if security cms -D -i "$profile" 2>/dev/null | grep -q "com.lukechang.GigEVirtualCamera.Extension"; then
+                EXT_PROFILE="$profile"
+                break
+              fi
+            fi
+          done
+
+          if [ -n "$EXT_PROFILE" ]; then
+            cp "$EXT_PROFILE" "$EXT_FULL_PATH/Contents/embedded.provisionprofile"
+            echo "✅ Embedded extension provisioning profile"
+          else
+            echo "❌ ERROR: Extension provisioning profile not found in $PROFILES_DIR!"
             exit 1
           fi
-          echo "✅ Extension provisioning profile verified"
 
           echo "Step 2: Cleaning hidden files..."
           find "$APP_PATH" -name ".DS_Store" -delete 2>/dev/null || true

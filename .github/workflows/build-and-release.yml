@@ -108,18 +108,26 @@ jobs:
 
           echo "Using Aravis from: $ARAVIS_PREFIX"
 
-          # Build with dynamic header paths
+          # Use archive action for proper system extension embedding
           xcodebuild -project GigEVirtualCamera.xcodeproj \
             -scheme GigEVirtualCamera \
             -configuration Release \
-            -derivedDataPath build/DerivedData \
+            -archivePath build/GigEVirtualCamera.xcarchive \
             -destination "generic/platform=macOS" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE="Manual" \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             HEADER_SEARCH_PATHS="/opt/homebrew/include ${ARAVIS_PREFIX}/include/aravis-0.8 ${GLIB_PREFIX}/include ${GLIB_PREFIX}/include/glib-2.0 ${GLIB_PREFIX}/lib/glib-2.0/include ${GETTEXT_PREFIX}/include ${PCRE2_PREFIX}/include /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/ffi" \
             LIBRARY_SEARCH_PATHS="/opt/homebrew/lib ${ARAVIS_PREFIX}/lib" \
-            clean build
+            clean archive
+
+          echo "Archive created successfully"
+
+          # Extract app from archive
+          echo "Extracting app from archive..."
+          mkdir -p build/DerivedData/Build/Products/Release
+          cp -R build/GigEVirtualCamera.xcarchive/Products/Applications/GigEVirtualCamera.app \
+            build/DerivedData/Build/Products/Release/
 
           echo "Build completed successfully"
 

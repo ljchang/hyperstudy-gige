@@ -21,7 +21,7 @@
 	<key>CMIOExtension</key>
 	<dict>
 		<key>CMIOExtensionMachServiceName</key>
-		<string>group.S368GH6KF7.com.lukechang.GigEVirtualCamera</string>
+		<string>group.S368GH6KF7.com.lukechang.GigEVirtualCamera.Extension</string>
 	</dict>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>

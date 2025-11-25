@@ -211,6 +211,7 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera.Extension
       PRODUCT_BUNDLE_PACKAGE_TYPE: SYSX
+      SKIP_INSTALL: YES
       INFOPLIST_FILE: GigEVirtualCameraExtension/Info.plist
       CODE_SIGN_ENTITLEMENTS: GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements
       SWIFT_VERSION: 5.0

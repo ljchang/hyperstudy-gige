@@ -206,26 +206,24 @@ jobs:
           fi
 
           echo "Step 4: Re-signing extension..."
-          # Remove old signature first
-          codesign --remove-signature "$EXT_FULL_PATH" 2>/dev/null || true
 
           # Re-sign with entitlements
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements \
             --timestamp \
             --options runtime \
+            --preserve-metadata=identifier,entitlements,requirements \
             "$EXT_FULL_PATH"
           echo "✅ Extension signed"
 
           echo "Step 5: Re-signing main app..."
-          # Remove old signature first
-          codesign --remove-signature "$APP_PATH" 2>/dev/null || true
 
           # Re-sign WITHOUT --deep flag (important!)
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --entitlements GigECameraApp/GigECamera-Distribution.entitlements \
             --timestamp \
             --options runtime \
+            --preserve-metadata=identifier,entitlements,requirements \
             "$APP_PATH"
           echo "✅ App signed"
 

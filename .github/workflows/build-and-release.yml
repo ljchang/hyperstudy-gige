@@ -207,23 +207,23 @@ jobs:
 
           echo "Step 4: Re-signing extension..."
 
-          # Re-sign with entitlements
+          # Re-sign with entitlements and explicit Developer ID requirements
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --entitlements GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements \
+            --requirements '=designated => identifier "com.lukechang.GigEVirtualCamera.Extension" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = S368GH6KF7' \
             --timestamp \
             --options runtime \
-            --preserve-metadata=identifier,entitlements,requirements \
             "$EXT_FULL_PATH"
           echo "✅ Extension signed"
 
           echo "Step 5: Re-signing main app..."
 
-          # Re-sign WITHOUT --deep flag (important!)
+          # Re-sign with entitlements and explicit Developer ID requirements
           codesign --force --sign "$CODE_SIGN_IDENTITY" \
             --entitlements GigECameraApp/GigECamera-Distribution.entitlements \
+            --requirements '=designated => identifier "com.lukechang.GigEVirtualCamera" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = S368GH6KF7' \
             --timestamp \
             --options runtime \
-            --preserve-metadata=identifier,entitlements,requirements \
             "$APP_PATH"
           echo "✅ App signed"
 

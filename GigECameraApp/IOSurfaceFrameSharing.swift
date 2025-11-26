@@ -23,7 +23,7 @@ import os.log
 class IOSurfaceFrameSender: NSObject {
     private let logger = Logger(subsystem: "com.lukechang.GigEVirtualCamera", category: "IOSurfaceFrameSender")
     private var xpcConnection: NSXPCConnection?
-    private let serviceName = "group.S368GH6KF7.com.lukechang.GigEVirtualCamera.Extension"
+    private let serviceName = "group.S368GH6KF7.com.lukechang.GigEVirtualCamera"
     private var frameCount: UInt64 = 0
     
     override init() {
@@ -180,7 +180,7 @@ class FrameSharingXPCService: NSObject, FrameSharingXPCProtocol, NSXPCListenerDe
     func start(frameHandler: @escaping (CVPixelBuffer) -> Void) {
         frameReceiver.setFrameHandler(frameHandler)
         
-        let serviceName = "group.S368GH6KF7.com.lukechang.GigEVirtualCamera.Extension"
+        let serviceName = "group.S368GH6KF7.com.lukechang.GigEVirtualCamera"
         logger.info("Starting XPC listener with service name: \(serviceName)")
         
         // Create XPC listener with the Mach service name

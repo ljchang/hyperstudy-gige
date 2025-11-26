@@ -35,7 +35,7 @@ echo ""
 
 # Check if extension binary exists and is executable
 echo "7️⃣ Extension binary check:"
-EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/MacOS/GigECameraExtension"
+EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/MacOS/GigECameraExtension"
 if [ -f "$EXTENSION_PATH" ]; then
     echo "✅ Extension binary exists"
     file "$EXTENSION_PATH"
@@ -49,7 +49,7 @@ echo ""
 echo "8️⃣ Code signing status:"
 codesign -dv /Applications/GigEVirtualCamera.app 2>&1 | grep -E "Identifier|TeamIdentifier|Format"
 echo ""
-codesign -dv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 | grep -E "Identifier|TeamIdentifier|Format"
+codesign -dv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 | grep -E "Identifier|TeamIdentifier|Format"
 echo ""
 
 # Suggest next steps

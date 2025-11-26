@@ -96,7 +96,7 @@ verify_signing() {
     fi
     
     # Check System Extension
-    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
     if [ -d "$EXTENSION_PATH" ]; then
         print_status "Verifying System Extension signature..."
         if ! codesign -dvv "$EXTENSION_PATH" 2>&1 | grep -q "Developer ID Application"; then
@@ -213,7 +213,7 @@ verify_notarization() {
     fi
     
     # Check System Extension specifically
-    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+    EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
     if [ -d "$EXTENSION_PATH" ]; then
         echo ""
         print_status "Checking System Extension notarization..."

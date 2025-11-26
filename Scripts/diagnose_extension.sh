@@ -25,8 +25,8 @@ echo
 
 # Check extension signature
 echo "5. Extension Signature Check:"
-if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
-    codesign -dvv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 | grep -E "(Signature|Authority|TeamIdentifier|Identifier)"
+if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension" ]; then
+    codesign -dvv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 | grep -E "(Signature|Authority|TeamIdentifier|Identifier)"
 else
     echo "Extension bundle not found"
 fi

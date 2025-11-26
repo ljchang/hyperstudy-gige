@@ -23,7 +23,7 @@ fi
 
 # 2. Check system extension bundle
 echo -e "\n2. Checking system extension bundle..."
-SYSEXT_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+SYSEXT_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 if [ -d "$SYSEXT_PATH" ]; then
     echo -e "   ${GREEN}✓${NC} System Extension bundle found"
 else

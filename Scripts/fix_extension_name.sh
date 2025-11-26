@@ -6,7 +6,7 @@
 echo "=== Fixing Extension Folder Name ==="
 
 APP_PATH="/Applications/GigEVirtualCamera.app"
-OLD_EXT_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+OLD_EXT_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 NEW_EXT_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
 if [ -d "$OLD_EXT_PATH" ]; then

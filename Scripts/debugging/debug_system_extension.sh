@@ -24,11 +24,11 @@ codesign -dv --verbose=4 /Applications/GigEVirtualCamera.app 2>&1 | grep -E "(Au
 echo
 
 echo "5. Checking extension signature..."
-codesign -dv --verbose=4 /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 | grep -E "(Authority|TeamIdentifier|Signature|entitled)"
+codesign -dv --verbose=4 /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 | grep -E "(Authority|TeamIdentifier|Signature|entitled)"
 echo
 
 echo "6. Checking if extension is properly embedded..."
-if [ -f "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/MacOS/GigECameraExtension" ]; then
+if [ -f "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/MacOS/GigECameraExtension" ]; then
     echo "✓ Extension binary found"
 else
     echo "✗ Extension binary not found!"
@@ -49,7 +49,7 @@ echo "App profile:"
 security cms -D -i /Applications/GigEVirtualCamera.app/Contents/embedded.provisionprofile 2>/dev/null | grep -E "(com.apple.developer.system-extension|Name)" | head -5
 echo
 echo "Extension profile:"
-security cms -D -i /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/embedded.provisionprofile 2>/dev/null | grep -E "(com.apple.developer|Name)" | head -10
+security cms -D -i /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/embedded.provisionprofile 2>/dev/null | grep -E "(com.apple.developer|Name)" | head -10
 echo
 
 echo "=== Recommendations ==="

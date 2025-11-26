@@ -162,7 +162,7 @@ jobs:
 
           # Embed extension provisioning profile
           EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions"
-          EXT_FULL_PATH="$EXTENSION_PATH/GigECameraExtension.systemextension"
+          EXT_FULL_PATH="$EXTENSION_PATH/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
           echo "Verifying extension bundle exists..."
           if [ ! -d "$EXT_FULL_PATH" ]; then
@@ -232,7 +232,7 @@ jobs:
       - name: Verify code signing
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/GigEVirtualCamera.app"
-          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+          EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
           echo "Verifying extension signature..."
           if codesign --verify --verbose --strict "$EXTENSION_PATH" 2>&1; then

@@ -59,7 +59,7 @@ sudo chmod -R 755 "/Applications/GigEVirtualCamera.app"
 
 # Make the app executable
 sudo chmod +x "/Applications/GigEVirtualCamera.app/Contents/MacOS/GigEVirtualCamera"
-sudo chmod +x "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/MacOS/GigECameraExtension"
+sudo chmod +x "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/MacOS/GigECameraExtension"
 
 echo "✅ Installation complete!"
 echo ""

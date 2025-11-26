@@ -44,7 +44,7 @@ done
 # 2. Sign the system extension
 echo
 echo "2. Signing system extension..."
-EXTENSION_PATH="$TEMP_APP/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION_PATH="$TEMP_APP/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 if [ -d "$EXTENSION_PATH" ]; then
     codesign --force --deep --sign "$IDENTITY" \
         --entitlements "/Users/lukechang/Github/hyperstudy-gige/GigEVirtualCameraExtension/GigEVirtualCameraExtension.entitlements" \

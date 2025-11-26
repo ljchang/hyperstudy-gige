@@ -11,7 +11,7 @@ echo "=== Fixing code signing for: $APP_PATH ==="
 # Remove any existing signatures
 echo "Removing existing signatures..."
 find "$APP_PATH" -type f -name "*.dylib" -exec codesign --remove-signature {} \; 2>/dev/null || true
-codesign --remove-signature "$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" 2>/dev/null || true
+codesign --remove-signature "$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension" 2>/dev/null || true
 codesign --remove-signature "$APP_PATH" 2>/dev/null || true
 
 # Get the development identity
@@ -34,7 +34,7 @@ if [ -d "$APP_PATH/Contents/Frameworks" ]; then
 fi
 
 # Sign the system extension
-EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 if [ -d "$EXTENSION_PATH" ]; then
     echo "Signing system extension..."
     # Create a minimal entitlements file for the extension if needed

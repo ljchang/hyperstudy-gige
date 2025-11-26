@@ -22,9 +22,9 @@ fi
 echo "Using identity: $IDENTITY"
 
 # Fix extension folder name if needed
-if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
+if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension" ]; then
     echo "Renaming extension folder to match bundle ID..."
-    mv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension \
+    mv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension \
        /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension
 fi
 

@@ -15,10 +15,10 @@ fi
 # 2. Check extension bundle
 echo -e "\n2. Checking extension bundle..."
 # Check for System Extension (current implementation)
-if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
+if [ -d "/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension" ]; then
     echo "   ✓ System Extension bundle found"
     EXTENSION_TYPE="systemextension"
-    EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+    EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 # Check for App Extension (legacy)
 elif [ -d "/Applications/GigEVirtualCamera.app/Contents/PlugIns/GigECameraExtension.appex" ]; then
     echo "   ✓ App Extension bundle found"

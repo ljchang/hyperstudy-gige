@@ -7,7 +7,7 @@ echo "=== Signing GigE Virtual Camera for Local Testing ==="
 echo
 
 APP_PATH="/Applications/GigEVirtualCamera.app"
-EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "❌ App not found at $APP_PATH"

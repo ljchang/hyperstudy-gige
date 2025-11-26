@@ -105,17 +105,10 @@ targets:
             # Use ditto to preserve code signatures and extended attributes
             ditto "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app" "/Applications/${PRODUCT_NAME}.app"
             echo "App copied to /Applications/${PRODUCT_NAME}.app"
-            
-            # Fix extension naming in /Applications
-            if [ -d "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" ]; then
-              echo "Fixing extension naming..."
-              mv "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension" \
-                 "/Applications/${PRODUCT_NAME}.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
-              
-              # Just copy without re-signing - let Xcode handle the signing
-              echo "App copied successfully"
-            fi
-            
+
+            # Extension folder now has correct name natively via PRODUCT_NAME setting
+            echo "Extension embedded as: com.lukechang.GigEVirtualCamera.Extension.systemextension"
+
             # Remove provisioning profile for Release builds (Developer ID doesn't use them)
             if [ "${CONFIGURATION}" = "Release" ]; then
               echo "Removing provisioning profile for Developer ID distribution..."
@@ -209,6 +202,8 @@ targets:
           - "CameraConstants.swift"  # App-only
           - "DesignSystem.swift"  # App-only
     settings:
+      # PRODUCT_NAME must match bundle ID for macOS to find the system extension
+      PRODUCT_NAME: com.lukechang.GigEVirtualCamera.Extension
       PRODUCT_BUNDLE_IDENTIFIER: com.lukechang.GigEVirtualCamera.Extension
       PRODUCT_BUNDLE_PACKAGE_TYPE: SYSX
       SKIP_INSTALL: YES

@@ -45,7 +45,7 @@ run_test "App installed in /Applications" \
     "installed"
 
 run_test "System Extension bundle exists" \
-    "test -d /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension && echo 'exists'" \
+    "test -d /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension && echo 'exists'" \
     "exists"
 
 # 2. Code Signing Tests
@@ -55,7 +55,7 @@ run_test "App is properly signed" \
     "valid"
 
 run_test "Extension is properly signed" \
-    "codesign --verify /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 && echo 'valid'" \
+    "codesign --verify /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 && echo 'valid'" \
     "valid"
 
 # 3. Entitlement Tests
@@ -65,7 +65,7 @@ run_test "App has system extension install entitlement" \
     "com.apple.developer.system-extension.install"
 
 run_test "Extension has camera entitlement" \
-    "codesign -d --entitlements - /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 | grep 'com.apple.security.device.camera'" \
+    "codesign -d --entitlements - /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 | grep 'com.apple.security.device.camera'" \
     "com.apple.security.device.camera"
 
 # 4. System Extension Tests

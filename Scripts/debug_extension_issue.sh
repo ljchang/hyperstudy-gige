@@ -10,22 +10,22 @@ echo
 
 # 2. Check if extension bundle is valid
 echo "2. Extension Bundle Structure:"
-ls -la /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/
+ls -la /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/
 echo
 
 # 3. Check binary architecture
 echo "3. Extension Binary Info:"
-file /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/MacOS/GigECameraExtension
+file /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/MacOS/GigECameraExtension
 echo
 
 # 4. Check Info.plist
 echo "4. Extension Info.plist (key values):"
-plutil -p /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/Info.plist | grep -E "CFBundleIdentifier|CFBundlePackageType|CMIOExtension"
+plutil -p /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/Info.plist | grep -E "CFBundleIdentifier|CFBundlePackageType|CMIOExtension"
 echo
 
 # 5. Check code signature
 echo "5. Code Signature Status:"
-codesign -dvvv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension 2>&1 | grep -E "Format|CDHash|Signature"
+codesign -dvvv /Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension 2>&1 | grep -E "Format|CDHash|Signature"
 echo
 
 # 6. List current extensions

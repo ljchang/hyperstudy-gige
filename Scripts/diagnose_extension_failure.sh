@@ -24,7 +24,7 @@ echo
 
 # 4. Check bundle structure
 echo "4. Extension Bundle Check:"
-EXTENSION="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 if [ -d "$EXTENSION" ]; then
     echo "✅ Extension bundle exists"
     echo "   Contents:"

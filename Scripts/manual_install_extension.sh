@@ -21,7 +21,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Path to extension
-EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION_PATH="/Applications/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 
 if [ ! -d "$EXTENSION_PATH" ]; then
     echo "❌ Extension not found at: $EXTENSION_PATH"

@@ -11,12 +11,12 @@ rm -rf build/QuickBuild
 # Create directories
 mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/MacOS
 mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/Frameworks
-mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/MacOS
+mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/MacOS
 mkdir -p build/QuickBuild/GigEVirtualCamera.app/Contents/Resources
 
 # Copy Info.plists
 cp GigECameraApp/Info.plist build/QuickBuild/GigEVirtualCamera.app/Contents/
-cp GigECameraExtension/Info.plist build/QuickBuild/GigEVirtualCamera.app/Contents/Library/SystemExtensions/GigECameraExtension.systemextension/Contents/
+cp GigECameraExtension/Info.plist build/QuickBuild/GigEVirtualCamera.app/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension/Contents/
 
 # Navigate to project root
 cd "$(dirname "$0")/../.."

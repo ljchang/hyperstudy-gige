@@ -49,10 +49,18 @@ sign_binary() {
     fi
 }
 
-# 0. Remove all embedded provisioning profiles
-echo -e "\n0. Removing embedded provisioning profiles..."
-find "$APP_PATH" -name "embedded.provisionprofile" -delete
-find "$APP_PATH" -name "*.provisionprofile" -delete
+# 0. Note about provisioning profiles
+# Developer ID system extensions require provisioning profiles - do NOT delete them
+echo -e "\n0. Checking provisioning profiles..."
+if [ -f "$APP_PATH/Contents/embedded.provisionprofile" ]; then
+    echo "  Main app has provisioning profile"
+fi
+EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
+if [ -f "$EXTENSION_PATH/Contents/embedded.provisionprofile" ]; then
+    echo "  Extension has provisioning profile"
+else
+    echo "  WARNING: Extension missing provisioning profile - it may need to be embedded"
+fi
 
 # 1. Sign all bundled libraries
 echo -e "\n1. Signing bundled libraries..."
@@ -66,7 +74,7 @@ for lib in "$APP_PATH/Contents/Frameworks"/*.dylib; do
 done
 
 # Sign frameworks in extension
-EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/GigECameraExtension.systemextension"
+EXTENSION_PATH="$APP_PATH/Contents/Library/SystemExtensions/com.lukechang.GigEVirtualCamera.Extension.systemextension"
 for lib in "$EXTENSION_PATH/Contents/Frameworks"/*.dylib; do
     if [ -f "$lib" ]; then
         lib_name=$(basename "$lib" .dylib)
@@ -84,7 +92,9 @@ if [ -f "$EXTENSION_PATH/Contents/MacOS/GigECameraExtension.debug.dylib" ]; then
 fi
 
 # Find entitlements file
-ENTITLEMENTS_PATH="/Users/lukechang/Github/hyperstudy-gige/GigECameraExtension/GigECameraExtension-Release.entitlements"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+ENTITLEMENTS_PATH="$PROJECT_ROOT/GigEVirtualCameraExtension/GigEVirtualCameraExtension-Distribution.entitlements"
 if [ ! -f "$ENTITLEMENTS_PATH" ]; then
     echo "Warning: Extension entitlements not found at $ENTITLEMENTS_PATH"
     # Sign without entitlements
@@ -130,7 +140,7 @@ if [ -f "$APP_PATH/Contents/MacOS/GigEVirtualCamera.debug.dylib" ]; then
 fi
 
 # Find main app entitlements
-APP_ENTITLEMENTS="/Users/lukechang/Github/hyperstudy-gige/GigECameraApp/GigECamera-Release.entitlements"
+APP_ENTITLEMENTS="$PROJECT_ROOT/GigECameraApp/GigECamera-Distribution.entitlements"
 if [ ! -f "$APP_ENTITLEMENTS" ]; then
     echo "Warning: App entitlements not found at $APP_ENTITLEMENTS"
     # Sign without entitlements

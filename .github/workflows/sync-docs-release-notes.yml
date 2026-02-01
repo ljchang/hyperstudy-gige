@@ -96,3 +96,4 @@ ${{ steps.release.outputs.body }}
           git add docs/devices/hyperstudy-gige.md
           git commit -m "Update GigE Virtual Camera release notes for ${{ steps.release.outputs.tag }}" || exit 0
           git push
+
